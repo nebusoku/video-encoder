@@ -190,12 +190,22 @@ switch ($Mode) {
 # -----------------------------
 # Tools: prefer portable structure
 # -----------------------------
+$depComponents = @("HandBrake")
+if (-not $ProbeHardwareOnly) {
+    $depComponents += "FFmpeg"
+}
+if ($EnableFileBotRename) {
+    $depComponents += "FileBot"
+}
+$depComponents = @($depComponents | Select-Object -Unique)
+
 if ($EnsureDependencies -or $RefreshDependencies) {
     $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
     if (-not (Test-Path -LiteralPath $depScript)) {
         throw "Dependency bootstrap script missing: $depScript"
     }
 
+    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components $depComponents
     & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies
 }
 
@@ -212,6 +222,7 @@ if (-not $CompletedCsvPath -or $CompletedCsvPath.Trim() -eq "") {
     $CompletedCsvPath = Join-Path $ConvertedDir ("{0}-Completed.csv" -f $ModeLabel)
 }
 
+
 $requiredTools = @()
 if ($ProbeHardwareOnly) {
     $requiredTools = @($HandBrakeCliPath)
@@ -226,6 +237,7 @@ if ($missingTools.Count -gt 0) {
         $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
         if (Test-Path -LiteralPath $depScript) {
             Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components $depComponents
             & $depScript -ToolsRoot (Join-Path $RepoRoot "tools")
         }
     }

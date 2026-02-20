@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$ToolsRoot = "",
+    [switch]$ForceRefresh,
+    [ValidateSet("FFmpeg","HandBrake","FileBot")]
+    [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
     [switch]$ForceRefresh
 )
 
@@ -17,11 +20,90 @@ function Ensure-Directory {
     if (-not (Test-Path -LiteralPath $Path)) { New-Item -Path $Path -ItemType Directory | Out-Null }
 }
 
+function Format-ByteSize {
+    param([double]$Bytes)
+
+    if ($Bytes -lt 1KB) { return ("{0:N0} B" -f $Bytes) }
+    if ($Bytes -lt 1MB) { return ("{0:N1} KB" -f ($Bytes / 1KB)) }
+    if ($Bytes -lt 1GB) { return ("{0:N1} MB" -f ($Bytes / 1MB)) }
+    return ("{0:N2} GB" -f ($Bytes / 1GB))
+}
+
+function Format-DurationShort {
+    param([TimeSpan]$Duration)
+
+    if ($Duration.TotalHours -ge 1) {
+        return ("{0}h {1}m {2}s" -f [int]$Duration.TotalHours, $Duration.Minutes, $Duration.Seconds)
+    }
+    if ($Duration.TotalMinutes -ge 1) {
+        return ("{0}m {1}s" -f [int]$Duration.TotalMinutes, $Duration.Seconds)
+    }
+    return ("{0}s" -f [int][Math]::Max(0, [Math]::Round($Duration.TotalSeconds)))
+}
+
 function Invoke-DownloadFile {
     param(
         [Parameter(Mandatory)][string]$Url,
         [Parameter(Mandatory)][string]$DestinationPath
     )
+
+    Write-Info "Downloading: $Url"
+
+    $request = [System.Net.HttpWebRequest]::Create($Url)
+    $request.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+
+    $response = $null
+    $responseStream = $null
+    $fileStream = $null
+
+    try {
+        $response = $request.GetResponse()
+        $totalBytes = [int64]$response.ContentLength
+        $responseStream = $response.GetResponseStream()
+
+        $parent = Split-Path -Parent $DestinationPath
+        if ($parent) { Ensure-Directory -Path $parent }
+
+        $fileStream = [System.IO.File]::Open($DestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+
+        $buffer = New-Object byte[] 65536
+        $downloaded = [int64]0
+        $downloadStart = Get-Date
+        $activity = "Downloading dependency"
+        $statusLabel = [System.IO.Path]::GetFileName($DestinationPath)
+
+        while (($read = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $fileStream.Write($buffer, 0, $read)
+            $downloaded += [int64]$read
+
+            $elapsed = (Get-Date) - $downloadStart
+            $elapsedSeconds = [Math]::Max(0.001, $elapsed.TotalSeconds)
+            $speedBytesPerSec = $downloaded / $elapsedSeconds
+            $speedLabel = (Format-ByteSize -Bytes $speedBytesPerSec) + "/s"
+
+            if ($totalBytes -gt 0) {
+                $percent = [int][Math]::Min(100, [Math]::Round(($downloaded * 100.0) / $totalBytes, 0))
+                $remainingBytes = [Math]::Max(0, $totalBytes - $downloaded)
+                $etaSeconds = if ($speedBytesPerSec -gt 0) { $remainingBytes / $speedBytesPerSec } else { 0 }
+                $etaLabel = Format-DurationShort -Duration ([TimeSpan]::FromSeconds($etaSeconds))
+
+                $status = "{0} of {1} ({2}%) | {3} | ETA {4}" -f (Format-ByteSize -Bytes $downloaded), (Format-ByteSize -Bytes $totalBytes), $percent, $speedLabel, $etaLabel
+                Write-Progress -Activity $activity -Status ("{0} :: {1}" -f $statusLabel, $status) -PercentComplete $percent
+            }
+            else {
+                $status = "{0} downloaded | {1}" -f (Format-ByteSize -Bytes $downloaded), $speedLabel
+                Write-Progress -Activity $activity -Status ("{0} :: {1}" -f $statusLabel, $status) -PercentComplete -1
+            }
+        }
+
+        Write-Progress -Activity $activity -Status "Completed" -Completed
+        Write-Info ("Download complete: {0} ({1})" -f $statusLabel, (Format-ByteSize -Bytes $downloaded))
+    }
+    finally {
+        if ($fileStream) { $fileStream.Dispose() }
+        if ($responseStream) { $responseStream.Dispose() }
+        if ($response) { $response.Dispose() }
+    }
     Write-Info "Downloading: $Url"
     Invoke-WebRequest -Uri $Url -OutFile $DestinationPath -UseBasicParsing
 }
@@ -37,6 +119,23 @@ function Expand-ZipTo {
 
 function Get-LatestGitHubRelease {
     param([Parameter(Mandatory)][string]$Repo)
+
+    $headers = @{ "User-Agent" = "video-encoder-deps" }
+    $latestApi = "https://api.github.com/repos/$Repo/releases/latest"
+
+    try {
+        return Invoke-RestMethod -Uri $latestApi -UseBasicParsing -Headers $headers
+    }
+    catch {
+        Write-Info "Latest release API failed for $Repo. Falling back to releases list..."
+        $releasesApi = "https://api.github.com/repos/$Repo/releases?per_page=25"
+        $releases = Invoke-RestMethod -Uri $releasesApi -UseBasicParsing -Headers $headers
+        $candidate = $releases | Where-Object { -not $_.draft -and -not $_.prerelease } | Select-Object -First 1
+        if (-not $candidate) {
+            throw "Could not determine a stable release for $Repo from GitHub API."
+        }
+        return $candidate
+    }
     $api = "https://api.github.com/repos/$Repo/releases/latest"
     return Invoke-RestMethod -Uri $api -UseBasicParsing
 }
@@ -149,6 +248,12 @@ function Ensure-FileBot {
 }
 
 Ensure-Directory -Path $ToolsRoot
+
+if ($Components -contains "FFmpeg") { Ensure-Ffmpeg -Root $ToolsRoot }
+if ($Components -contains "HandBrake") { Ensure-HandBrake -Root $ToolsRoot }
+if ($Components -contains "FileBot") { Ensure-FileBot -Root $ToolsRoot }
+
+Write-Info ("Dependencies are ready under: {0} (components: {1})" -f $ToolsRoot, ($Components -join ", "))
 Ensure-Ffmpeg -Root $ToolsRoot
 Ensure-HandBrake -Root $ToolsRoot
 Ensure-FileBot -Root $ToolsRoot
