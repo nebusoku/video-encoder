@@ -212,6 +212,30 @@ if (-not $CompletedCsvPath -or $CompletedCsvPath.Trim() -eq "") {
     $CompletedCsvPath = Join-Path $ConvertedDir ("{0}-Completed.csv" -f $ModeLabel)
 }
 
+$requiredTools = @()
+if ($ProbeHardwareOnly) {
+    $requiredTools = @($HandBrakeCliPath)
+}
+else {
+    $requiredTools = @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)
+}
+
+$missingTools = @($requiredTools | Where-Object { -not (Test-Path -LiteralPath $_) })
+if ($missingTools.Count -gt 0) {
+    if (-not $EnsureDependencies -and -not $RefreshDependencies) {
+        $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
+        if (Test-Path -LiteralPath $depScript) {
+            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools")
+        }
+    }
+
+    $missingTools = @($requiredTools | Where-Object { -not (Test-Path -LiteralPath $_) })
+    if ($missingTools.Count -gt 0) {
+        throw ("Tool(s) not found: " + ($missingTools -join ", ") + ". Run with -EnsureDependencies to download tools.")
+    }
+}
+
 foreach ($p in @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)) {
     if (-not (Test-Path -LiteralPath $p)) { throw "Tool not found: $p" }
 }

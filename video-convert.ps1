@@ -46,6 +46,7 @@ if (-not $Mode -and -not $ProbeHardwareOnly) {
     switch ($selection) {
         "1" {
             $ProbeHardwareOnly = $true
+            $EnsureDependencies = $true
             if (-not $Mode) { $Mode = "1" }
         }
         "2" {
@@ -66,5 +67,6 @@ if (-not $Mode -and -not $ProbeHardwareOnly) {
 if ($Mode) { $PSBoundParameters["Mode"] = $Mode }
 if ($RootPath) { $PSBoundParameters["RootPath"] = $RootPath }
 if ($ProbeHardwareOnly) { $PSBoundParameters["ProbeHardwareOnly"] = $true }
+if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
 
 & $scriptPath @PSBoundParameters
