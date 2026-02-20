@@ -236,6 +236,9 @@ if ($missingTools.Count -gt 0) {
     }
 }
 
+foreach ($p in @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)) {
+    if (-not (Test-Path -LiteralPath $p)) { throw "Tool not found: $p" }
+}
 if ($EnableFileBotRename) {
     if (-not $FileBotPath -or -not (Test-Path -LiteralPath $FileBotPath)) {
         throw "EnableFileBotRename is set, but FileBot not found. Put it in tools\filebot\ or set -FileBotPath."
