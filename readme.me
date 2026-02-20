@@ -43,3 +43,14 @@ Typical usage
 
 4) Hardware test only:
 `powershell -ExecutionPolicy Bypass -File .\video-convert.ps1 -ProbeHardwareOnly -RefreshHardwareCache`
+
+
+PowerShell ISE / console run notes
+- Do **not** wrap the command in backticks. Backticks in PowerShell are escape characters, not quote wrappers.
+- From an open PowerShell prompt in the repo folder, use either:
+  - `& ".\video-convert.ps1"`
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\video-convert.ps1"`
+- Or use the Windows helper launcher (avoids command formatting mistakes):
+  - `run-video-convert.cmd`
+- To pass args through the cmd launcher:
+  - `run-video-convert.cmd -ProbeHardwareOnly -RefreshHardwareCache`
