@@ -87,3 +87,4 @@ finally {
     if ($TranscriptStarted) { Stop-Transcript | Out-Null }
     Write-Host "Diagnostic log: $DiagLog" -ForegroundColor DarkGray
 }
+& $scriptPath @PSBoundParameters
