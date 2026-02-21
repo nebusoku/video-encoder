@@ -1,5 +1,10 @@
 # Parser-safe syntax checker for broad Windows PowerShell compatibility.
 
+$ScriptVersion = "2026.02.21.1"
+$ScriptSelf = $MyInvocation.MyCommand.Path
+Write-Host ("[syntax-check] Script: {0}" -f $ScriptSelf) -ForegroundColor DarkGray
+Write-Host ("[syntax-check] Version: {0}" -f $ScriptVersion) -ForegroundColor DarkGray
+
 $Root = ""
 $IncludeLegacyShims = $false
 

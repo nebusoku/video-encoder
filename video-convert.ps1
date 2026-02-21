@@ -1,5 +1,10 @@
 # Parser-safe launcher for broad Windows PowerShell compatibility (no param()/CmdletBinding usage).
 
+$ScriptVersion = "2026.02.21.1"
+$ScriptSelf = $MyInvocation.MyCommand.Path
+Write-Host ("[launcher] Script: {0}" -f $ScriptSelf) -ForegroundColor DarkGray
+Write-Host ("[launcher] Version: {0}" -f $ScriptVersion) -ForegroundColor DarkGray
+
 $RootPath = ""
 $Mode = ""
 $FfprobePath = ""
