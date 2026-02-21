@@ -32,6 +32,17 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Missing script: $scriptPath"
 }
 
+$LogRoot = Join-Path $PSScriptRoot "Logs"
+if (-not (Test-Path -LiteralPath $LogRoot)) { New-Item -Path $LogRoot -ItemType Directory | Out-Null }
+$DiagLog = Join-Path $LogRoot ("Session-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+$TranscriptStarted = $false
+try {
+    Start-Transcript -Path $DiagLog -Append -ErrorAction Stop | Out-Null
+    $TranscriptStarted = $true
+} catch {
+    Write-Host "Could not start transcript log: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 if (-not $Mode -and -not $ProbeHardwareOnly) {
     $selection = ""
     while ($selection -notin @("1","2","3")) {
@@ -69,4 +80,11 @@ if ($RootPath) { $PSBoundParameters["RootPath"] = $RootPath }
 if ($ProbeHardwareOnly) { $PSBoundParameters["ProbeHardwareOnly"] = $true }
 if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
 
+try {
+    & $scriptPath @PSBoundParameters
+}
+finally {
+    if ($TranscriptStarted) { Stop-Transcript | Out-Null }
+    Write-Host "Diagnostic log: $DiagLog" -ForegroundColor DarkGray
+}
 & $scriptPath @PSBoundParameters

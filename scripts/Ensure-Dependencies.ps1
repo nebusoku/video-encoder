@@ -2,6 +2,7 @@
 param(
     [string]$ToolsRoot = "",
     [switch]$ForceRefresh,
+    [string[]]$Components
     [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
     [ValidateSet("FFmpeg","HandBrake","FileBot")]
     [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
@@ -16,6 +17,7 @@ if (-not $ToolsRoot) { $ToolsRoot = Join-Path (Split-Path -Parent $ScriptDir) "t
 
 $validComponents = @("FFmpeg","HandBrake","FileBot")
 if (-not $Components -or $Components.Count -eq 0) {
+    $Components = @("FFmpeg","HandBrake","FileBot")
     $Components = $validComponents
 }
 $invalidComponents = @($Components | Where-Object { $validComponents -notcontains $_ })
