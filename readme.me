@@ -80,6 +80,9 @@ Diagnostics
 - Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` before execution.
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax-Core.ps1` to pre-check parser errors before running jobs (legacy shim `scripts\Ensure-Dependencies.ps1` is skipped by default).
 - If you want to include legacy shims in parser checks, run: `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax-Core.ps1 -IncludeLegacyShims`.
+- Run `python .\scripts\Validate-PowerShellStatic.py` for a line-by-line static token/balance sanity check (catches unclosed braces/parentheses, merge markers, and wrapper scripts accidentally regaining typed `param(...)` blocks).
+
+- Compatibility wrappers: `video-convert.ps1` and `scripts/Test-PowerShellSyntax.ps1` forward to their `*-Core.ps1` counterparts.
 
 - Compatibility wrappers: `video-convert.ps1` and `scripts/Test-PowerShellSyntax.ps1` forward to their `*-Core.ps1` counterparts.
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax.ps1` to pre-check parser errors before running jobs (legacy shim `scripts\Ensure-Dependencies.ps1` is skipped by default).

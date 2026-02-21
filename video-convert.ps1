@@ -5,6 +5,8 @@ if (-not (Test-Path -LiteralPath $core)) {
     throw "Missing launcher core script: $core"
 }
 & $core @args
+}
+& $core @args
 # Parser-safe launcher for broad Windows PowerShell compatibility (no param()/CmdletBinding usage).
 
 $ScriptVersion = "2026.02.21.1"
