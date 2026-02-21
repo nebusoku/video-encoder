@@ -11,6 +11,12 @@ Main scripts
 - `video-convert.ps1` (interactive menu + compatibility entrypoint)
 - `scripts/Start-TV.ps1` (mode 1 / 720p TV profile)
 - `scripts/Start-Movies.ps1` (mode 2 / 1080p Movies profile)
+- `scripts/Ensure-Dependencies-Core.ps1` (downloads/refreshes toolchain)
+
+Portable dependency management
+- `-EnsureDependencies` verifies/downloads missing tools into `tools\` (only the needed components for the selected flow).
+- Dependency bootstrap argument parsing is now WinPS-compatible (no typed `param(...)` requirements in `Ensure-Dependencies-Core.ps1`).
+- Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
 - `scripts/Ensure-Dependencies.ps1` (downloads/refreshes toolchain)
 
 Portable dependency management
@@ -64,5 +70,6 @@ PowerShell ISE / console run notes
 
 Diagnostics
 - Each launcher run writes a session transcript log under `Logs\Session-YYYYMMDD-HHMMSS.log` for troubleshooting.
+- Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` and `scripts\Ensure-Dependencies-Core.ps1` before execution.
 - Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` and `scripts\Ensure-Dependencies.ps1` before execution.
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax.ps1` to pre-check for parser errors / unexpected tokens before running jobs.

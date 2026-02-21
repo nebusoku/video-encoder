@@ -201,6 +201,7 @@ if ($EnableFileBotRename) {
 $depComponents = @($depComponents | Select-Object -Unique)
 
 if ($EnsureDependencies -or $RefreshDependencies) {
+    $depScript = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
     $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
     if (-not (Test-Path -LiteralPath $depScript)) {
         throw "Dependency bootstrap script missing: $depScript"
@@ -236,6 +237,10 @@ else {
 $missingTools = @($requiredTools | Where-Object { -not (Test-Path -LiteralPath $_) })
 if ($missingTools.Count -gt 0) {
     if (-not $EnsureDependencies -and -not $RefreshDependencies) {
+        $depScript = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
+        if (Test-Path -LiteralPath $depScript) {
+            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
         $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
         if (Test-Path -LiteralPath $depScript) {
             Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"

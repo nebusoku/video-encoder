@@ -93,6 +93,7 @@ if ($ProbeHardwareOnly) { $PSBoundParameters["ProbeHardwareOnly"] = $true }
 if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
 
 if ($EnsureDependencies -or $RefreshDependencies) {
+    $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies-Core.ps1"
     $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies.ps1"
     if (Test-Path -LiteralPath $depScriptPath) { Assert-ScriptParseable -Path $depScriptPath }
 }
