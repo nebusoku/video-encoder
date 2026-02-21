@@ -72,6 +72,9 @@ PowerShell ISE / console run notes
 
 Diagnostics
 - Each launcher run writes a session transcript log under `Logs\Session-YYYYMMDD-HHMMSS.log` for troubleshooting.
+- Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` before execution.
+- Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax.ps1` to pre-check parser errors before running jobs (legacy shim `scripts\Ensure-Dependencies.ps1` is skipped by default).
+- If you want to include legacy shims in parser checks, run: `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax.ps1 -IncludeLegacyShims`.
 - Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` and `scripts\Ensure-Dependencies-Core.ps1` before execution.
 - Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` and `scripts\Ensure-Dependencies.ps1` before execution.
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax.ps1` to pre-check for parser errors / unexpected tokens before running jobs.

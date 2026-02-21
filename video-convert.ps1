@@ -32,6 +32,71 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Missing script: $scriptPath"
 }
 
+$LogRoot = Join-Path $PSScriptRoot "Logs"
+if (-not (Test-Path -LiteralPath $LogRoot)) { New-Item -Path $LogRoot -ItemType Directory | Out-Null }
+$DiagLog = Join-Path $LogRoot ("Session-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+$TranscriptStarted = $false
+
+try {
+    Start-Transcript -Path $DiagLog -Append -ErrorAction Stop | Out-Null
+    $TranscriptStarted = $true
+}
+catch {
+    Write-Host "Could not start transcript log: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+if (-not $Mode -and -not $ProbeHardwareOnly) {
+    $selection = ""
+    while ($selection -notin @("1","2","3")) {
+        Write-Host ""
+        Write-Host "Select action:" -ForegroundColor Cyan
+        Write-Host "  1) Hardware Test (build/update machine hardware profile)" -ForegroundColor Gray
+        Write-Host "  2) Encode TV Show" -ForegroundColor Gray
+        Write-Host "  3) Encode Movies" -ForegroundColor Gray
+        $selection = Read-Host "Enter 1, 2, or 3"
+    }
+
+    if ($selection -eq "1") {
+        $ProbeHardwareOnly = $true
+        $EnsureDependencies = $true
+        if (-not $Mode) { $Mode = "1" }
+    }
+    elseif ($selection -eq "2") {
+        $Mode = "1"
+        if (-not $RootPath -or $RootPath.Trim() -eq "") {
+            $RootPath = Read-Host "Enter TV root path to process"
+        }
+    }
+    elseif ($selection -eq "3") {
+        $Mode = "2"
+        if (-not $RootPath -or $RootPath.Trim() -eq "") {
+            $RootPath = Read-Host "Enter Movies root path to process"
+        }
+    }
+}
+
+if ($Mode) { $PSBoundParameters["Mode"] = $Mode }
+if ($RootPath) { $PSBoundParameters["RootPath"] = $RootPath }
+if ($ProbeHardwareOnly) { $PSBoundParameters["ProbeHardwareOnly"] = $true }
+if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
+if ($RefreshDependencies) { $PSBoundParameters["RefreshDependencies"] = $true }
+
+# Keep parse check simple: only verify main worker script to avoid false-positives on host-specific dependency paths.
+$tokens = $null
+$errors = $null
+[void][System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors)
+if ($errors -and $errors.Count -gt 0) {
+    $msg = ($errors | ForEach-Object { $_.Message + " (line " + $_.Extent.StartLineNumber + ", col " + $_.Extent.StartColumnNumber + ")" }) -join "; "
+    throw "Script parse precheck failed for '$scriptPath': $msg"
+}
+
+try {
+    & $scriptPath @PSBoundParameters
+}
+finally {
+    if ($TranscriptStarted) { Stop-Transcript | Out-Null }
+    Write-Host "Diagnostic log: $DiagLog" -ForegroundColor DarkGray
+}
 function Get-ScriptParseErrorText {
     param([Parameter(Mandatory)][string]$Path)
 

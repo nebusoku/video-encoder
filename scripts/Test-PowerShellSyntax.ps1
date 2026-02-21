@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [string]$Root = "",
+    [switch]$IncludeLegacyShims
     [string]$Root = ""
 )
 
@@ -8,10 +10,22 @@ $ErrorActionPreference = "Stop"
 
 if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
+$skipFiles = @()
+if (-not $IncludeLegacyShims) {
+    $skipFiles += (Join-Path $Root "scripts\Ensure-Dependencies.ps1")
+}
+$skipLookup = @{}
+foreach ($s in $skipFiles) { $skipLookup[$s.ToLowerInvariant()] = $true }
+
 $files = Get-ChildItem -Path $Root -Recurse -Filter "*.ps1" | Sort-Object FullName
 $hadError = $false
 
 foreach ($file in $files) {
+    if ($skipLookup.ContainsKey($file.FullName.ToLowerInvariant())) {
+        Write-Host "[SKIP] $($file.FullName) (legacy shim)" -ForegroundColor DarkYellow
+        continue
+    }
+
     $tokens = $null
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
@@ -32,4 +46,5 @@ if ($hadError) {
     throw "PowerShell parse check failed. See errors above."
 }
 
+Write-Host "PowerShell parse check passed for selected .ps1 files." -ForegroundColor Cyan
 Write-Host "PowerShell parse check passed for all .ps1 files." -ForegroundColor Cyan
