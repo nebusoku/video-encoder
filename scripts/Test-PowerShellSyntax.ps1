@@ -12,6 +12,12 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '^-IncludeLegacyShims:(?i:false|0)$' { $IncludeLegacyShims = $false; continue }
     }
 }
+[CmdletBinding()]
+param(
+    [string]$Root = "",
+    [switch]$IncludeLegacyShims
+    [string]$Root = ""
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -55,3 +61,4 @@ if ($hadError) {
 }
 
 Write-Host "PowerShell parse check passed for selected .ps1 files." -ForegroundColor Cyan
+Write-Host "PowerShell parse check passed for all .ps1 files." -ForegroundColor Cyan
