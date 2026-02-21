@@ -1,3 +1,17 @@
+# Parser-safe syntax checker for broad Windows PowerShell compatibility.
+
+$Root = ""
+$IncludeLegacyShims = $false
+
+for ($i = 0; $i -lt $args.Count; $i++) {
+    $arg = [string]$args[$i]
+    switch -Regex ($arg) {
+        '^-Root$' { if ($i + 1 -lt $args.Count) { $Root = [string]$args[++$i] }; continue }
+        '^-IncludeLegacyShims$' { $IncludeLegacyShims = $true; continue }
+        '^-IncludeLegacyShims:(?i:true|1)$' { $IncludeLegacyShims = $true; continue }
+        '^-IncludeLegacyShims:(?i:false|0)$' { $IncludeLegacyShims = $false; continue }
+    }
+}
 [CmdletBinding()]
 param(
     [string]$Root = "",

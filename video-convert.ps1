@@ -1,3 +1,62 @@
+# Parser-safe launcher for broad Windows PowerShell compatibility (no param()/CmdletBinding usage).
+
+$RootPath = ""
+$Mode = ""
+$FfprobePath = ""
+$FfmpegPath = ""
+$HandBrakeCliPath = ""
+$FileBotPath = ""
+$CompletedCsvPath = ""
+$BackupOriginal = $false
+$MaxTotalInputGB = 0
+$DryRun = $false
+$EnableFileBotRename = $false
+$FileBotTestRun = $false
+$ConcurrentJobs = 2
+$EncoderMode = "Auto"
+$Quality = 23
+$AudioBitrateKbps = 160
+$EnsureDependencies = $false
+$RefreshDependencies = $false
+$ProbeHardwareOnly = $false
+$RefreshHardwareCache = $false
+
+for ($i = 0; $i -lt $args.Count; $i++) {
+    $arg = [string]$args[$i]
+
+    switch -Regex ($arg) {
+        '^-RootPath$' { if ($i + 1 -lt $args.Count) { $RootPath = [string]$args[++$i] }; continue }
+        '^-Mode$' { if ($i + 1 -lt $args.Count) { $Mode = [string]$args[++$i] }; continue }
+        '^-FfprobePath$' { if ($i + 1 -lt $args.Count) { $FfprobePath = [string]$args[++$i] }; continue }
+        '^-FfmpegPath$' { if ($i + 1 -lt $args.Count) { $FfmpegPath = [string]$args[++$i] }; continue }
+        '^-HandBrakeCliPath$' { if ($i + 1 -lt $args.Count) { $HandBrakeCliPath = [string]$args[++$i] }; continue }
+        '^-FileBotPath$' { if ($i + 1 -lt $args.Count) { $FileBotPath = [string]$args[++$i] }; continue }
+        '^-CompletedCsvPath$' { if ($i + 1 -lt $args.Count) { $CompletedCsvPath = [string]$args[++$i] }; continue }
+        '^-MaxTotalInputGB$' { if ($i + 1 -lt $args.Count) { $MaxTotalInputGB = [double]$args[++$i] }; continue }
+        '^-ConcurrentJobs$' { if ($i + 1 -lt $args.Count) { $ConcurrentJobs = [int]$args[++$i] }; continue }
+        '^-EncoderMode$' { if ($i + 1 -lt $args.Count) { $EncoderMode = [string]$args[++$i] }; continue }
+        '^-Quality$' { if ($i + 1 -lt $args.Count) { $Quality = [int]$args[++$i] }; continue }
+        '^-AudioBitrateKbps$' { if ($i + 1 -lt $args.Count) { $AudioBitrateKbps = [int]$args[++$i] }; continue }
+
+        '^-BackupOriginal$' { $BackupOriginal = $true; continue }
+        '^-DryRun$' { $DryRun = $true; continue }
+        '^-EnableFileBotRename$' { $EnableFileBotRename = $true; continue }
+        '^-FileBotTestRun$' { $FileBotTestRun = $true; continue }
+        '^-EnsureDependencies$' { $EnsureDependencies = $true; continue }
+        '^-RefreshDependencies$' { $RefreshDependencies = $true; continue }
+        '^-ProbeHardwareOnly$' { $ProbeHardwareOnly = $true; continue }
+        '^-RefreshHardwareCache$' { $RefreshHardwareCache = $true; continue }
+
+        '^-BackupOriginal:(?i:true|1)$' { $BackupOriginal = $true; continue }
+        '^-DryRun:(?i:true|1)$' { $DryRun = $true; continue }
+        '^-EnableFileBotRename:(?i:true|1)$' { $EnableFileBotRename = $true; continue }
+        '^-FileBotTestRun:(?i:true|1)$' { $FileBotTestRun = $true; continue }
+        '^-EnsureDependencies:(?i:true|1)$' { $EnsureDependencies = $true; continue }
+        '^-RefreshDependencies:(?i:true|1)$' { $RefreshDependencies = $true; continue }
+        '^-ProbeHardwareOnly:(?i:true|1)$' { $ProbeHardwareOnly = $true; continue }
+        '^-RefreshHardwareCache:(?i:true|1)$' { $RefreshHardwareCache = $true; continue }
+    }
+}
 [CmdletBinding()]
 param(
     [string]$RootPath = "",
@@ -37,6 +96,8 @@ if (-not (Test-Path -LiteralPath $LogRoot)) { New-Item -Path $LogRoot -ItemType 
 $DiagLog = Join-Path $LogRoot ("Session-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
 $TranscriptStarted = $false
 
+try { Start-Transcript -Path $DiagLog -Append -ErrorAction Stop | Out-Null; $TranscriptStarted = $true }
+catch { Write-Host "Could not start transcript log: $($_.Exception.Message)" -ForegroundColor Yellow }
 try {
     Start-Transcript -Path $DiagLog -Append -ErrorAction Stop | Out-Null
     $TranscriptStarted = $true
@@ -63,6 +124,36 @@ if (-not $Mode -and -not $ProbeHardwareOnly) {
     }
     elseif ($selection -eq "2") {
         $Mode = "1"
+        if (-not $RootPath -or $RootPath.Trim() -eq "") { $RootPath = Read-Host "Enter TV root path to process" }
+    }
+    elseif ($selection -eq "3") {
+        $Mode = "2"
+        if (-not $RootPath -or $RootPath.Trim() -eq "") { $RootPath = Read-Host "Enter Movies root path to process" }
+    }
+}
+
+$invokeArgs = @{}
+if ($RootPath) { $invokeArgs.RootPath = $RootPath }
+if ($Mode) { $invokeArgs.Mode = $Mode }
+if ($FfprobePath) { $invokeArgs.FfprobePath = $FfprobePath }
+if ($FfmpegPath) { $invokeArgs.FfmpegPath = $FfmpegPath }
+if ($HandBrakeCliPath) { $invokeArgs.HandBrakeCliPath = $HandBrakeCliPath }
+if ($FileBotPath) { $invokeArgs.FileBotPath = $FileBotPath }
+if ($CompletedCsvPath) { $invokeArgs.CompletedCsvPath = $CompletedCsvPath }
+$invokeArgs.MaxTotalInputGB = $MaxTotalInputGB
+$invokeArgs.ConcurrentJobs = $ConcurrentJobs
+$invokeArgs.EncoderMode = $EncoderMode
+$invokeArgs.Quality = $Quality
+$invokeArgs.AudioBitrateKbps = $AudioBitrateKbps
+if ($BackupOriginal) { $invokeArgs.BackupOriginal = $true }
+if ($DryRun) { $invokeArgs.DryRun = $true }
+if ($EnableFileBotRename) { $invokeArgs.EnableFileBotRename = $true }
+if ($FileBotTestRun) { $invokeArgs.FileBotTestRun = $true }
+if ($EnsureDependencies) { $invokeArgs.EnsureDependencies = $true }
+if ($RefreshDependencies) { $invokeArgs.RefreshDependencies = $true }
+if ($ProbeHardwareOnly) { $invokeArgs.ProbeHardwareOnly = $true }
+if ($RefreshHardwareCache) { $invokeArgs.RefreshHardwareCache = $true }
+
         if (-not $RootPath -or $RootPath.Trim() -eq "") {
             $RootPath = Read-Host "Enter TV root path to process"
         }
@@ -90,6 +181,11 @@ if ($errors -and $errors.Count -gt 0) {
     throw "Script parse precheck failed for '$scriptPath': $msg"
 }
 
+try { & $scriptPath @invokeArgs }
+finally {
+    if ($TranscriptStarted) { Stop-Transcript | Out-Null }
+    Write-Host "Diagnostic log: $DiagLog" -ForegroundColor DarkGray
+}
 try {
     & $scriptPath @PSBoundParameters
 }
