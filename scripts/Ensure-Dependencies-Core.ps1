@@ -19,6 +19,36 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 
     if ($arg -eq "-Components" -and $i + 1 -lt $args.Count) { $Components = [string]$args[++$i]; continue }
     if ($arg.StartsWith("-Components:")) { $Components = [string]$arg.Substring(12); continue }
+    switch -Regex ($arg) {
+        '^-ToolsRoot$' {
+            if ($i + 1 -lt $args.Count) { $ToolsRoot = [string]$args[$i + 1]; $i++ }
+            continue
+        }
+        '^-ToolsRoot:(.+)$' {
+            $ToolsRoot = [string]$Matches[1]
+            continue
+        }
+        '^-ForceRefresh$' {
+            $ForceRefresh = $true
+            continue
+        }
+        '^-ForceRefresh:(?i:true|1)$' {
+            $ForceRefresh = $true
+            continue
+        }
+        '^-ForceRefresh:(?i:false|0)$' {
+            $ForceRefresh = $false
+            continue
+        }
+        '^-Components$' {
+            if ($i + 1 -lt $args.Count) { $Components = [string]$args[$i + 1]; $i++ }
+            continue
+        }
+        '^-Components:(.+)$' {
+            $Components = [string]$Matches[1]
+            continue
+        }
+    }
 }
 
 Set-StrictMode -Version Latest
