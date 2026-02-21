@@ -49,6 +49,14 @@ function Assert-ScriptParseable {
 
     $errText = Get-ScriptParseErrorText -Path $Path
     if ($errText) {
+function Assert-ScriptParseable {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $tokens = $null
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+    if ($errors -and $errors.Count -gt 0) {
+        $errText = ($errors | ForEach-Object { "{0} (line {1}, col {2})" -f $_.Message, $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber }) -join "; "
         throw "Script parse precheck failed for '$Path': $errText"
     }
 }
@@ -128,6 +136,9 @@ if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
 if ($EnsureDependencies -or $RefreshDependencies) {
     $depScriptPath = Resolve-DependencyScriptPath -ScriptsRoot (Join-Path $PSScriptRoot "scripts")
     Assert-ScriptParseable -Path $depScriptPath
+    $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies-Core.ps1"
+    $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies.ps1"
+    if (Test-Path -LiteralPath $depScriptPath) { Assert-ScriptParseable -Path $depScriptPath }
 }
 Assert-ScriptParseable -Path $scriptPath
 
@@ -138,3 +149,4 @@ finally {
     if ($TranscriptStarted) { Stop-Transcript | Out-Null }
     Write-Host "Diagnostic log: $DiagLog" -ForegroundColor DarkGray
 }
+& $scriptPath @PSBoundParameters
