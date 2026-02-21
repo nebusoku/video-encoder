@@ -3,6 +3,11 @@ param(
     [string]$ToolsRoot = "",
     [switch]$ForceRefresh,
     [string]$Components = ""
+    [string[]]$Components
+    [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
+    [ValidateSet("FFmpeg","HandBrake","FileBot")]
+    [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
+    [switch]$ForceRefresh
 )
 
 Set-StrictMode -Version Latest
@@ -26,6 +31,15 @@ if ($invalidComponents.Count -gt 0) {
     throw ("Invalid component(s): " + ($invalidComponents -join ", ") + ". Valid values: " + ($validComponents -join ", "))
 }
 $Components = @($componentList | Select-Object -Unique)
+if (-not $Components -or $Components.Count -eq 0) {
+    $Components = @("FFmpeg","HandBrake","FileBot")
+    $Components = $validComponents
+}
+$invalidComponents = @($Components | Where-Object { $validComponents -notcontains $_ })
+if ($invalidComponents.Count -gt 0) {
+    throw ("Invalid component(s): " + ($invalidComponents -join ", ") + ". Valid values: " + ($validComponents -join ", "))
+}
+$Components = @($Components | Select-Object -Unique)
 
 function Write-Info { param([string]$Message) Write-Host "[deps] $Message" -ForegroundColor Cyan }
 
@@ -118,6 +132,8 @@ function Invoke-DownloadFile {
         if ($responseStream) { $responseStream.Dispose() }
         if ($response) { $response.Dispose() }
     }
+    Write-Info "Downloading: $Url"
+    Invoke-WebRequest -Uri $Url -OutFile $DestinationPath -UseBasicParsing
 }
 
 function Expand-ZipTo {
@@ -148,6 +164,8 @@ function Get-LatestGitHubRelease {
         }
         return $candidate
     }
+    $api = "https://api.github.com/repos/$Repo/releases/latest"
+    return Invoke-RestMethod -Uri $api -UseBasicParsing
 }
 
 function Install-FromZipRoot {
@@ -264,3 +282,8 @@ if ($Components -contains "HandBrake") { Ensure-HandBrake -Root $ToolsRoot }
 if ($Components -contains "FileBot") { Ensure-FileBot -Root $ToolsRoot }
 
 Write-Info ("Dependencies are ready under: {0} (components: {1})" -f $ToolsRoot, ($Components -join ", "))
+Ensure-Ffmpeg -Root $ToolsRoot
+Ensure-HandBrake -Root $ToolsRoot
+Ensure-FileBot -Root $ToolsRoot
+
+Write-Info "Dependencies are ready under: $ToolsRoot"
