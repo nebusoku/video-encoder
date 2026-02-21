@@ -1,5 +1,12 @@
 # Parser-safe launcher for broad Windows PowerShell compatibility (no param()/CmdletBinding usage).
 
+$ScriptSelf = $MyInvocation.MyCommand.Path
+$ScriptVersion = "unknown"
+$versionPath = Join-Path (Split-Path -Parent $PSScriptRoot) "VERSION"
+if (Test-Path -LiteralPath $versionPath) {
+    $ScriptVersion = ((Get-Content -LiteralPath $versionPath -ErrorAction SilentlyContinue | Select-Object -First 1) + "").Trim()
+    if (-not $ScriptVersion) { $ScriptVersion = "unknown" }
+}
 $ScriptVersion = "2026.02.21.1"
 $ScriptSelf = $MyInvocation.MyCommand.Path
 Write-Host ("[launcher] Script: {0}" -f $ScriptSelf) -ForegroundColor DarkGray
