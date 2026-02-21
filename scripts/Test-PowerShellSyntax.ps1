@@ -2,6 +2,7 @@
 param(
     [string]$Root = "",
     [switch]$IncludeLegacyShims
+    [string]$Root = ""
 )
 
 Set-StrictMode -Version Latest
@@ -46,3 +47,4 @@ if ($hadError) {
 }
 
 Write-Host "PowerShell parse check passed for selected .ps1 files." -ForegroundColor Cyan
+Write-Host "PowerShell parse check passed for all .ps1 files." -ForegroundColor Cyan
