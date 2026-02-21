@@ -14,6 +14,7 @@ What this does
   - Regular video files: encode to MP4 when non-compliant
   - .ts: ffmpeg remux -> mkv -> HandBrake encode -> MP4
   - .iso/.img: mount -> HandBrake scan -> pick best title -> encode -> MP4
+- Completed CSV "Mini DB" resume:
 - Completed CSV “Mini DB” resume:
   - Writes a record for every file touched (Success/Skipped/Failed)
   - Skip items already terminal AND unchanged (Size + LastWriteTimeUtc)
@@ -205,6 +206,7 @@ if ($EnsureDependencies -or $RefreshDependencies) {
         throw "Dependency bootstrap script missing: $depScript"
     }
 
+    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components ($depComponents -join ",")
     & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components $depComponents
     & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies
 }
@@ -237,6 +239,7 @@ if ($missingTools.Count -gt 0) {
         $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
         if (Test-Path -LiteralPath $depScript) {
             Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
             & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components $depComponents
             & $depScript -ToolsRoot (Join-Path $RepoRoot "tools")
         }
@@ -275,6 +278,7 @@ if ($EnableFileBotRename) {
 }
 
 # -----------------------------
+# Completed CSV "Mini DB"
 # Completed CSV “Mini DB”
 # -----------------------------
 $TerminalStatuses = @("Success","Skipped")

@@ -2,6 +2,7 @@
 param(
     [string]$ToolsRoot = "",
     [switch]$ForceRefresh,
+    [string]$Components = ""
     [string[]]$Components
     [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
     [ValidateSet("FFmpeg","HandBrake","FileBot")]
@@ -16,6 +17,20 @@ $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyI
 if (-not $ToolsRoot) { $ToolsRoot = Join-Path (Split-Path -Parent $ScriptDir) "tools" }
 
 $validComponents = @("FFmpeg","HandBrake","FileBot")
+$componentList = @()
+
+if (-not $Components -or $Components.Trim() -eq "") {
+    $componentList = @("FFmpeg","HandBrake","FileBot")
+}
+else {
+    $componentList = @($Components -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+}
+
+$invalidComponents = @($componentList | Where-Object { $validComponents -notcontains $_ })
+if ($invalidComponents.Count -gt 0) {
+    throw ("Invalid component(s): " + ($invalidComponents -join ", ") + ". Valid values: " + ($validComponents -join ", "))
+}
+$Components = @($componentList | Select-Object -Unique)
 if (-not $Components -or $Components.Count -eq 0) {
     $Components = @("FFmpeg","HandBrake","FileBot")
     $Components = $validComponents
