@@ -17,6 +17,14 @@ Portable dependency management
 - `-EnsureDependencies` verifies/downloads missing tools into `tools\` (only the needed components for the selected flow).
 - Dependency bootstrap argument parsing is now WinPS-compatible (no typed `param(...)` requirements in `Ensure-Dependencies-Core.ps1`).
 - Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
+- `scripts/Ensure-Dependencies.ps1` (downloads/refreshes toolchain)
+
+Portable dependency management
+- `-EnsureDependencies` verifies/downloads missing tools into `tools\` (only the needed components for the selected flow).
+- Dependency bootstrap argument parsing is now WinPS-compatible (no typed `param(...)` requirements in `Ensure-Dependencies.ps1`).
+- Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
+- Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
+- `-EnsureDependencies` verifies/downloads missing tools into `tools\`.
 - `-RefreshDependencies` forces a re-download/update even when tools already exist.
 
 Backup behavior
@@ -25,6 +33,7 @@ Backup behavior
 
 Hardware test + cache
 - Selecting Hardware Test from the menu automatically enables dependency bootstrap (HandBrake only).
+- Selecting Hardware Test from the menu automatically enables dependency bootstrap.
 - `-ProbeHardwareOnly` runs GPU/encoder capability probe and exits.
 - `-RefreshHardwareCache` forces refresh of probe data.
 - Cache file: `Config\hardware-profile-<COMPUTERNAME>.json`.
@@ -62,4 +71,5 @@ PowerShell ISE / console run notes
 Diagnostics
 - Each launcher run writes a session transcript log under `Logs\Session-YYYYMMDD-HHMMSS.log` for troubleshooting.
 - Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` and `scripts\Ensure-Dependencies-Core.ps1` before execution.
+- Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` and `scripts\Ensure-Dependencies.ps1` before execution.
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax.ps1` to pre-check for parser errors / unexpected tokens before running jobs.

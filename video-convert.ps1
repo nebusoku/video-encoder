@@ -94,6 +94,7 @@ if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
 
 if ($EnsureDependencies -or $RefreshDependencies) {
     $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies-Core.ps1"
+    $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies.ps1"
     if (Test-Path -LiteralPath $depScriptPath) { Assert-ScriptParseable -Path $depScriptPath }
 }
 Assert-ScriptParseable -Path $scriptPath
@@ -105,3 +106,4 @@ finally {
     if ($TranscriptStarted) { Stop-Transcript | Out-Null }
     Write-Host "Diagnostic log: $DiagLog" -ForegroundColor DarkGray
 }
+& $scriptPath @PSBoundParameters
