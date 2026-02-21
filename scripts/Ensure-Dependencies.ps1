@@ -2,6 +2,7 @@
 param(
     [string]$ToolsRoot = "",
     [switch]$ForceRefresh,
+    [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
     [ValidateSet("FFmpeg","HandBrake","FileBot")]
     [string[]]$Components = @("FFmpeg","HandBrake","FileBot")
     [switch]$ForceRefresh
@@ -12,6 +13,16 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $ToolsRoot) { $ToolsRoot = Join-Path (Split-Path -Parent $ScriptDir) "tools" }
+
+$validComponents = @("FFmpeg","HandBrake","FileBot")
+if (-not $Components -or $Components.Count -eq 0) {
+    $Components = $validComponents
+}
+$invalidComponents = @($Components | Where-Object { $validComponents -notcontains $_ })
+if ($invalidComponents.Count -gt 0) {
+    throw ("Invalid component(s): " + ($invalidComponents -join ", ") + ". Valid values: " + ($validComponents -join ", "))
+}
+$Components = @($Components | Select-Object -Unique)
 
 function Write-Info { param([string]$Message) Write-Host "[deps] $Message" -ForegroundColor Cyan }
 
