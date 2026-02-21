@@ -206,6 +206,7 @@ if ($EnsureDependencies -or $RefreshDependencies) {
     }
 
     & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components $depComponents
+    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies
 }
 
 if (-not $FfprobePath)      { $FfprobePath      = Join-Path $RepoRoot "tools\ffmpeg\bin\ffprobe.exe" }
@@ -237,6 +238,7 @@ if ($missingTools.Count -gt 0) {
         if (Test-Path -LiteralPath $depScript) {
             Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
             & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components $depComponents
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools")
         }
     }
 
@@ -246,6 +248,9 @@ if ($missingTools.Count -gt 0) {
     }
 }
 
+foreach ($p in @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)) {
+    if (-not (Test-Path -LiteralPath $p)) { throw "Tool not found: $p" }
+}
 if ($EnableFileBotRename) {
     if (-not $FileBotPath -or -not (Test-Path -LiteralPath $FileBotPath)) {
         throw "EnableFileBotRename is set, but FileBot not found. Put it in tools\filebot\ or set -FileBotPath."

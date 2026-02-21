@@ -16,6 +16,7 @@ Main scripts
 Portable dependency management
 - `-EnsureDependencies` verifies/downloads missing tools into `tools\` (only the needed components for the selected flow).
 - Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
+- `-EnsureDependencies` verifies/downloads missing tools into `tools\`.
 - `-RefreshDependencies` forces a re-download/update even when tools already exist.
 
 Backup behavior
@@ -24,6 +25,7 @@ Backup behavior
 
 Hardware test + cache
 - Selecting Hardware Test from the menu automatically enables dependency bootstrap (HandBrake only).
+- Selecting Hardware Test from the menu automatically enables dependency bootstrap.
 - `-ProbeHardwareOnly` runs GPU/encoder capability probe and exits.
 - `-RefreshHardwareCache` forces refresh of probe data.
 - Cache file: `Config\hardware-profile-<COMPUTERNAME>.json`.
