@@ -16,6 +16,8 @@ Main scripts
 Portable dependency management
 - `-EnsureDependencies` verifies/downloads missing tools into `tools\` (only the needed components for the selected flow).
 - Dependency bootstrap argument parsing is now WinPS-compatible (no typed `param(...)` requirements in `Ensure-Dependencies-Core.ps1`).
+- Launcher prefers `Ensure-Dependencies-Core.ps1` and will fall back to legacy `Ensure-Dependencies.ps1` only if needed.
+- Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
 - Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
 - `scripts/Ensure-Dependencies.ps1` (downloads/refreshes toolchain)
 

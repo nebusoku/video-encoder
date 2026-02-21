@@ -32,6 +32,23 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Missing script: $scriptPath"
 }
 
+function Get-ScriptParseErrorText {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $tokens = $null
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+    if ($errors -and $errors.Count -gt 0) {
+        return (($errors | ForEach-Object { "{0} (line {1}, col {2})" -f $_.Message, $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber }) -join "; ")
+    }
+    return ""
+}
+
+function Assert-ScriptParseable {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $errText = Get-ScriptParseErrorText -Path $Path
+    if ($errText) {
 function Assert-ScriptParseable {
     param([Parameter(Mandatory)][string]$Path)
 
@@ -42,6 +59,30 @@ function Assert-ScriptParseable {
         $errText = ($errors | ForEach-Object { "{0} (line {1}, col {2})" -f $_.Message, $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber }) -join "; "
         throw "Script parse precheck failed for '$Path': $errText"
     }
+}
+
+function Resolve-DependencyScriptPath {
+    param([Parameter(Mandatory)][string]$ScriptsRoot)
+
+    $corePath = Join-Path $ScriptsRoot "Ensure-Dependencies-Core.ps1"
+    $legacyPath = Join-Path $ScriptsRoot "Ensure-Dependencies.ps1"
+
+    if (Test-Path -LiteralPath $corePath) {
+        $coreErr = Get-ScriptParseErrorText -Path $corePath
+        if (-not $coreErr) { return $corePath }
+    }
+
+    if (Test-Path -LiteralPath $legacyPath) {
+        $legacyErr = Get-ScriptParseErrorText -Path $legacyPath
+        if (-not $legacyErr) { return $legacyPath }
+    }
+
+    if (Test-Path -LiteralPath $corePath) {
+        $coreErr = Get-ScriptParseErrorText -Path $corePath
+        throw "No parseable dependency bootstrap script found. Core errors: $coreErr"
+    }
+
+    throw "No dependency bootstrap script found under: $ScriptsRoot"
 }
 
 $LogRoot = Join-Path $PSScriptRoot "Logs"
@@ -93,6 +134,8 @@ if ($ProbeHardwareOnly) { $PSBoundParameters["ProbeHardwareOnly"] = $true }
 if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
 
 if ($EnsureDependencies -or $RefreshDependencies) {
+    $depScriptPath = Resolve-DependencyScriptPath -ScriptsRoot (Join-Path $PSScriptRoot "scripts")
+    Assert-ScriptParseable -Path $depScriptPath
     $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies-Core.ps1"
     $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies.ps1"
     if (Test-Path -LiteralPath $depScriptPath) { Assert-ScriptParseable -Path $depScriptPath }
