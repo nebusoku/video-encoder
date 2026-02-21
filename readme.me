@@ -1,1 +1,73 @@
-the design for this is to have a completly portable way to prep files for plex play back for ideal on roku and other devices
+Portable Plex Prep Scripts
+
+Startup menu flow
+- Running `video-convert.ps1` with no mode now shows:
+  1) Hardware Test
+  2) Encode TV Show
+  3) Encode Movies
+- Choosing 2 or 3 prompts for the media root path before encoding starts.
+
+Main scripts
+- `video-convert.ps1` (compatibility wrapper)
+- `scripts/Launch-VideoConvert-Core.ps1` (interactive menu + core launcher)
+- `scripts/Start-TV.ps1` (mode 1 / 720p TV profile)
+- `scripts/Start-Movies.ps1` (mode 2 / 1080p Movies profile)
+- `scripts/Ensure-Dependencies-Core.ps1` (downloads/refreshes toolchain)
+
+Portable dependency management
+- `-EnsureDependencies` verifies/downloads missing tools into `tools\` (only the needed components for the selected flow).
+- Dependency bootstrap argument parsing is now WinPS-compatible (no typed `param(...)` requirements in `Ensure-Dependencies-Core.ps1`).
+- Launcher prefers `Ensure-Dependencies-Core.ps1` and will fall back to legacy `Ensure-Dependencies.ps1` only if needed.
+- Dependency downloads now show human-readable progress (percent, transferred size, speed, ETA).
+- `-RefreshDependencies` forces a re-download/update even when tools already exist.
+
+Backup behavior
+- `Originals` folders are created only when `-BackupOriginal` is enabled.
+- Without `-BackupOriginal`, originals are removed after successful replacement and no empty backup folders are left behind.
+
+Hardware test + cache
+- Selecting Hardware Test from the menu automatically enables dependency bootstrap (HandBrake only).
+- `-ProbeHardwareOnly` runs GPU/encoder capability probe and exits.
+- `-RefreshHardwareCache` forces refresh of probe data.
+- Cache file: `Config\hardware-profile-<COMPUTERNAME>.json`.
+- Auto mode (`-EncoderMode Auto`) reuses cached profile when valid.
+
+Completed CSV behavior
+- Completed records are stored with full input/output paths.
+- At end of each run, the completed CSV is rewritten as a clean snapshot (one latest row per input path) to keep resume data tidy and avoid wasted re-processing.
+
+Typical usage
+1) Menu-driven:
+`powershell -ExecutionPolicy Bypass -File .\scripts\Launch-VideoConvert-Core.ps1`
+
+2) TV pass:
+`powershell -ExecutionPolicy Bypass -File .\scripts\Start-TV.ps1 -RootPath "Y:\TV Shows" -EnsureDependencies -EnableFileBotRename`
+
+3) Movies pass:
+`powershell -ExecutionPolicy Bypass -File .\scripts\Start-Movies.ps1 -RootPath "Y:\Movies" -EnsureDependencies -EnableFileBotRename`
+
+4) Hardware test only:
+`powershell -ExecutionPolicy Bypass -File .\video-convert.ps1 -ProbeHardwareOnly -RefreshHardwareCache`
+
+
+PowerShell ISE / console run notes
+- Do **not** wrap the command in backticks. Backticks in PowerShell are escape characters, not quote wrappers.
+- From an open PowerShell prompt in the repo folder, use either:
+  - `& ".\video-convert.ps1"`
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\video-convert.ps1"`
+- Or use the Windows helper launcher (avoids command formatting mistakes):
+  - `run-video-convert.cmd`
+- To pass args through the cmd launcher:
+  - `run-video-convert.cmd -ProbeHardwareOnly -RefreshHardwareCache`
+
+
+Diagnostics
+- Each launcher run writes a session transcript log under `Logs\Session-YYYYMMDD-HHMMSS.log` for troubleshooting.
+- Launcher and syntax-check helper use parser-safe argument handling (no typed `param(...)` block) for broader WinPS compatibility.
+- Launcher and syntax checker print their executing script path + version header so you can confirm you are running the updated copy.
+- Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` before execution.
+- Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax-Core.ps1` to pre-check parser errors before running jobs (legacy shim `scripts\Ensure-Dependencies.ps1` is skipped by default).
+- If you want to include legacy shims in parser checks, run: `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax-Core.ps1 -IncludeLegacyShims`.
+- Run `python .\scripts\Validate-PowerShellStatic.py` for a line-by-line static token/balance sanity check (catches unclosed braces/parentheses, merge markers, and wrapper scripts accidentally regaining typed `param(...)` blocks).
+
+- Compatibility wrappers: `video-convert.ps1` and `scripts/Test-PowerShellSyntax.ps1` forward to their `*-Core.ps1` counterparts.
