@@ -5,6 +5,20 @@ $Components = ""
 
 for ($i = 0; $i -lt $args.Count; $i++) {
     $arg = [string]$args[$i]
+
+    if ($arg -eq "-ToolsRoot" -and $i + 1 -lt $args.Count) { $ToolsRoot = [string]$args[++$i]; continue }
+    if ($arg.StartsWith("-ToolsRoot:")) { $ToolsRoot = [string]$arg.Substring(11); continue }
+
+    if ($arg -eq "-ForceRefresh") { $ForceRefresh = $true; continue }
+    if ($arg.StartsWith("-ForceRefresh:")) {
+        $v = $arg.Substring(14).ToLowerInvariant()
+        if ($v -in @('true','1')) { $ForceRefresh = $true }
+        elseif ($v -in @('false','0')) { $ForceRefresh = $false }
+        continue
+    }
+
+    if ($arg -eq "-Components" -and $i + 1 -lt $args.Count) { $Components = [string]$args[++$i]; continue }
+    if ($arg.StartsWith("-Components:")) { $Components = [string]$arg.Substring(12); continue }
     switch -Regex ($arg) {
         '^-ToolsRoot$' {
             if ($i + 1 -lt $args.Count) { $ToolsRoot = [string]$args[$i + 1]; $i++ }

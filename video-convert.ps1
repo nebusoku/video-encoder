@@ -1,3 +1,10 @@
+# Compatibility launcher wrapper. Prefer scripts/Launch-VideoConvert-Core.ps1.
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+$core = Join-Path $scriptDir "scripts\Launch-VideoConvert-Core.ps1"
+if (-not (Test-Path -LiteralPath $core)) {
+    throw "Missing launcher core script: $core"
+}
+& $core @args
 # Parser-safe launcher for broad Windows PowerShell compatibility (no param()/CmdletBinding usage).
 
 $ScriptVersion = "2026.02.21.1"

@@ -1,10 +1,3 @@
-# Compatibility syntax-check wrapper. Prefer Test-PowerShellSyntax-Core.ps1.
-$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$core = Join-Path $scriptDir "Test-PowerShellSyntax-Core.ps1"
-if (-not (Test-Path -LiteralPath $core)) {
-    throw "Missing syntax-check core script: $core"
-}
-& $core @args
 # Parser-safe syntax checker for broad Windows PowerShell compatibility.
 
 $ScriptVersion = "2026.02.21.1"
@@ -17,19 +10,16 @@ $IncludeLegacyShims = $false
 
 for ($i = 0; $i -lt $args.Count; $i++) {
     $arg = [string]$args[$i]
-    switch -Regex ($arg) {
-        '^-Root$' { if ($i + 1 -lt $args.Count) { $Root = [string]$args[++$i] }; continue }
-        '^-IncludeLegacyShims$' { $IncludeLegacyShims = $true; continue }
-        '^-IncludeLegacyShims:(?i:true|1)$' { $IncludeLegacyShims = $true; continue }
-        '^-IncludeLegacyShims:(?i:false|0)$' { $IncludeLegacyShims = $false; continue }
+
+    if ($arg -eq "-Root" -and $i + 1 -lt $args.Count) { $Root = [string]$args[++$i]; continue }
+    if ($arg -eq "-IncludeLegacyShims") { $IncludeLegacyShims = $true; continue }
+    if ($arg.StartsWith("-IncludeLegacyShims:")) {
+        $v = $arg.Substring(20).ToLowerInvariant()
+        if ($v -in @('true','1')) { $IncludeLegacyShims = $true }
+        elseif ($v -in @('false','0')) { $IncludeLegacyShims = $false }
+        continue
     }
 }
-[CmdletBinding()]
-param(
-    [string]$Root = "",
-    [switch]$IncludeLegacyShims
-    [string]$Root = ""
-)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -73,4 +63,3 @@ if ($hadError) {
 }
 
 Write-Host "PowerShell parse check passed for selected .ps1 files." -ForegroundColor Cyan
-Write-Host "PowerShell parse check passed for all .ps1 files." -ForegroundColor Cyan

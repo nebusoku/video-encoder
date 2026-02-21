@@ -2,6 +2,7 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
+set "PS_SCRIPT=%SCRIPT_DIR%scripts\Launch-VideoConvert-Core.ps1"
 set "PS_SCRIPT=%SCRIPT_DIR%video-convert.ps1"
 
 if not exist "%PS_SCRIPT%" (
