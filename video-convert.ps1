@@ -32,6 +32,18 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Missing script: $scriptPath"
 }
 
+function Assert-ScriptParseable {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $tokens = $null
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+    if ($errors -and $errors.Count -gt 0) {
+        $errText = ($errors | ForEach-Object { "{0} (line {1}, col {2})" -f $_.Message, $_.Extent.StartLineNumber, $_.Extent.StartColumnNumber }) -join "; "
+        throw "Script parse precheck failed for '$Path': $errText"
+    }
+}
+
 $LogRoot = Join-Path $PSScriptRoot "Logs"
 if (-not (Test-Path -LiteralPath $LogRoot)) { New-Item -Path $LogRoot -ItemType Directory | Out-Null }
 $DiagLog = Join-Path $LogRoot ("Session-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
@@ -79,6 +91,12 @@ if ($Mode) { $PSBoundParameters["Mode"] = $Mode }
 if ($RootPath) { $PSBoundParameters["RootPath"] = $RootPath }
 if ($ProbeHardwareOnly) { $PSBoundParameters["ProbeHardwareOnly"] = $true }
 if ($EnsureDependencies) { $PSBoundParameters["EnsureDependencies"] = $true }
+
+if ($EnsureDependencies -or $RefreshDependencies) {
+    $depScriptPath = Join-Path $PSScriptRoot "scripts\Ensure-Dependencies.ps1"
+    if (Test-Path -LiteralPath $depScriptPath) { Assert-ScriptParseable -Path $depScriptPath }
+}
+Assert-ScriptParseable -Path $scriptPath
 
 try {
     & $scriptPath @PSBoundParameters
