@@ -121,6 +121,17 @@ def check_file(path: Path) -> list[Issue]:
             issues.append(Issue(path, line, col, f"Merge marker '{marker}' found."))
 
     rel = path.relative_to(ROOT).as_posix()
+    wrapper_limits = {
+        "video-convert.ps1": 80,
+        "scripts/Test-PowerShellSyntax.ps1": 80,
+        "scripts/Ensure-Dependencies.ps1": 80,
+    }
+    if rel in wrapper_limits:
+        line_count = text.count("\n") + (0 if text.endswith("\n") else 1)
+        if line_count > wrapper_limits[rel]:
+            issues.append(Issue(path, 1, 1, "Compatibility wrapper unexpectedly large; possible accidental script concatenation."))
+        if "& $core @args" not in text:
+            issues.append(Issue(path, 1, 1, "Compatibility wrapper must forward with '& $core @args'."))
     if rel in {"video-convert.ps1", "scripts/Test-PowerShellSyntax.ps1", "scripts/Ensure-Dependencies.ps1"}:
         lowered = text.lower()
         for token in ("[cmdletbinding", "\nparam("):

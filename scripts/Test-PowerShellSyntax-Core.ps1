@@ -33,6 +33,23 @@ $ErrorActionPreference = "Stop"
 
 if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
+
+$hashTargets = @(
+    (Join-Path $Root "video-convert.ps1"),
+    (Join-Path $Root "scripts\Test-PowerShellSyntax.ps1"),
+    (Join-Path $Root "scripts\Invoke-VideoConvert.ps1")
+)
+foreach ($hashTarget in $hashTargets) {
+    if (Test-Path -LiteralPath $hashTarget) {
+        try {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $hashTarget).Hash
+            Write-Host ("[syntax-check] SHA256 {0} {1}" -f (Split-Path -Leaf $hashTarget), $hash) -ForegroundColor DarkGray
+        }
+        catch {
+            Write-Host ("[syntax-check] Could not hash {0}: {1}" -f $hashTarget, $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
+}
 $skipFiles = @()
 if (-not $IncludeLegacyShims) {
     $skipFiles += (Join-Path $Root "scripts\Ensure-Dependencies.ps1")

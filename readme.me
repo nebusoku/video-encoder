@@ -77,6 +77,8 @@ Diagnostics
 - Each launcher run writes a session transcript log under `Logs\Session-YYYYMMDD-HHMMSS.log` for troubleshooting.
 - Launcher and syntax-check helper use parser-safe argument handling (no typed `param(...)` block) for broader WinPS compatibility.
 - Launcher and syntax checker print their executing script path + version header so you can confirm you are running the updated copy.
+- Script version is read from the repo `VERSION` file (currently `1.0.15`) and printed by wrappers/core scripts on startup so you can confirm exact build in use.
+- Syntax checker also prints SHA256 for `video-convert.ps1`, `scripts\Test-PowerShellSyntax.ps1`, and `scripts\Invoke-VideoConvert.ps1` so you can confirm exact file bytes on disk.
 - Script version is read from the repo `VERSION` file (starting at `1.0.14`) and printed by wrappers/core scripts on startup so you can confirm exact build in use.
 - Launcher now performs an automatic parser precheck on `scripts\Invoke-VideoConvert.ps1` before execution.
 - Run `powershell -ExecutionPolicy Bypass -File .\scripts\Test-PowerShellSyntax-Core.ps1` to pre-check parser errors before running jobs (legacy shim `scripts\Ensure-Dependencies.ps1` is skipped by default).
