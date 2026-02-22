@@ -15,6 +15,7 @@ What this does
   - .ts: ffmpeg remux -> mkv -> HandBrake encode -> MP4
   - .iso/.img: mount -> HandBrake scan -> pick best title -> encode -> MP4
 - Completed CSV "Mini DB" resume:
+- Completed CSV “Mini DB” resume:
   - Writes a record for every file touched (Success/Skipped/Failed)
   - Skip items already terminal AND unchanged (Size + LastWriteTimeUtc)
 - Validation:
@@ -206,11 +207,17 @@ if (-not (Test-Path -LiteralPath $depScript)) {
 }
 
 if ($EnsureDependencies -or $RefreshDependencies) {
+if ($EnsureDependencies -or $RefreshDependencies) {
+    $depScript = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
+    $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
     if (-not (Test-Path -LiteralPath $depScript)) {
         throw "Dependency bootstrap script missing: $depScript"
     }
 
     & $depScript -ToolsRoot $toolsRoot -ForceRefresh:$RefreshDependencies -Components ($depComponents -join ",")
+    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components ($depComponents -join ",")
+    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components $depComponents
+    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies
 }
 
 if (-not $FfprobePath)      { $FfprobePath      = Join-Path $RepoRoot "tools\ffmpeg\bin\ffprobe.exe" }
@@ -241,6 +248,17 @@ if ($missingTools.Count -gt 0) {
         if (Test-Path -LiteralPath $depScript) {
             Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
             & $depScript -ToolsRoot $toolsRoot -Components ($depComponents -join ",")
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
+        $depScript = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
+        if (Test-Path -LiteralPath $depScript) {
+            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
+        $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
+        if (Test-Path -LiteralPath $depScript) {
+            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components $depComponents
+            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools")
         }
     }
 
@@ -250,6 +268,9 @@ if ($missingTools.Count -gt 0) {
     }
 }
 
+foreach ($p in @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)) {
+    if (-not (Test-Path -LiteralPath $p)) { throw "Tool not found: $p" }
+}
 if ($EnableFileBotRename) {
     if (-not $FileBotPath -or -not (Test-Path -LiteralPath $FileBotPath)) {
         throw "EnableFileBotRename is set, but FileBot not found. Put it in tools\filebot\ or set -FileBotPath."
@@ -275,6 +296,7 @@ if ($EnableFileBotRename) {
 
 # -----------------------------
 # Completed CSV "Mini DB"
+# Completed CSV “Mini DB”
 # -----------------------------
 $TerminalStatuses = @("Success","Skipped")
 $script:CompletedIndex = New-Object 'System.Collections.Generic.Dictionary[string, object]' ([StringComparer]::OrdinalIgnoreCase)
