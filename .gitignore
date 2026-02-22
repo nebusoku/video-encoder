@@ -29,3 +29,4 @@ Desktop.ini
 # Repo-local hardware profiles
 /Config/hardware-profile-*.json
 /Config/*.log
+/Config
