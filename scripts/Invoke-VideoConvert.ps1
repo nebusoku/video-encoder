@@ -207,17 +207,12 @@ if (-not (Test-Path -LiteralPath $depScript)) {
 }
 
 if ($EnsureDependencies -or $RefreshDependencies) {
-if ($EnsureDependencies -or $RefreshDependencies) {
-    $depScript = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
-    $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
     if (-not (Test-Path -LiteralPath $depScript)) {
         throw "Dependency bootstrap script missing: $depScript"
     }
 
-    & $depScript -ToolsRoot $toolsRoot -ForceRefresh:$RefreshDependencies -Components ($depComponents -join ",")
-    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components ($depComponents -join ",")
-    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies -Components $depComponents
-    & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -ForceRefresh:$RefreshDependencies
+    # Call once; core script should decide what to install based on -Components
+    & $depScript -ToolsRoot $toolsRoot -ForceRefresh:$RefreshDependencies -Components $depComponents
 }
 
 if (-not $FfprobePath)      { $FfprobePath      = Join-Path $RepoRoot "tools\ffmpeg\bin\ffprobe.exe" }
@@ -241,24 +236,19 @@ if ($ProbeHardwareOnly) {
 else {
     $requiredTools = @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)
 }
-
 $missingTools = @($requiredTools | Where-Object { -not (Test-Path -LiteralPath $_) })
+
 if ($missingTools.Count -gt 0) {
+
     if (-not $EnsureDependencies -and -not $RefreshDependencies) {
-        if (Test-Path -LiteralPath $depScript) {
+        $autoDep = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
+        if (-not (Test-Path -LiteralPath $autoDep)) {
+            $autoDep = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
+        }
+
+        if (Test-Path -LiteralPath $autoDep) {
             Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
-            & $depScript -ToolsRoot $toolsRoot -Components ($depComponents -join ",")
-            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
-        $depScript = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
-        if (Test-Path -LiteralPath $depScript) {
-            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
-            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
-        $depScript = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
-        if (Test-Path -LiteralPath $depScript) {
-            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
-            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components ($depComponents -join ",")
-            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools") -Components $depComponents
-            & $depScript -ToolsRoot (Join-Path $RepoRoot "tools")
+            & $autoDep -ToolsRoot $toolsRoot -Components $depComponents
         }
     }
 
@@ -267,16 +257,6 @@ if ($missingTools.Count -gt 0) {
         throw ("Tool(s) not found: " + ($missingTools -join ", ") + ". Run with -EnsureDependencies to download tools.")
     }
 }
-
-foreach ($p in @($FfprobePath,$FfmpegPath,$HandBrakeCliPath)) {
-    if (-not (Test-Path -LiteralPath $p)) { throw "Tool not found: $p" }
-}
-if ($EnableFileBotRename) {
-    if (-not $FileBotPath -or -not (Test-Path -LiteralPath $FileBotPath)) {
-        throw "EnableFileBotRename is set, but FileBot not found. Put it in tools\filebot\ or set -FileBotPath."
-    }
-}
-
 Write-Log "=== Media Cleanup START ===" "INFO" "Cyan"
 Write-Log "Mode: $ModeLabel" "INFO" "Cyan"
 Write-Log "RootPath: $RootPath" "INFO" "Gray"

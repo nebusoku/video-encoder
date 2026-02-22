@@ -68,7 +68,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     if ($arg.StartsWith("-RefreshHardwareCache:")) { if ($arg.Substring(22).ToLowerInvariant() -in @('true','1')) { $RefreshHardwareCache = $true }; continue }
 }
 
-$scriptPath = Join-Path $PSScriptRoot "scripts\Invoke-VideoConvert.ps1"
+$scriptPath = Join-Path $PSScriptRoot "Invoke-VideoConvert.ps1"
 if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Missing script: $scriptPath"
 }
