@@ -127,6 +127,43 @@ function Write-Log {
     Add-Content -Path $LogFile -Value $line
 }
 
+function Invoke-NativeCapture {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter()][string[]]$ArgumentList = @()
+    )
+
+    $stdoutLog = Join-Path $env:TEMP ("native-" + [guid]::NewGuid().ToString() + ".out.log")
+    $stderrLog = Join-Path $env:TEMP ("native-" + [guid]::NewGuid().ToString() + ".err.log")
+
+    try {
+        $p = Start-Process -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError  $stderrLog
+
+        $out = ""
+        $err = ""
+        try { if (Test-Path -LiteralPath $stdoutLog) { $out = Get-Content -LiteralPath $stdoutLog -Raw -ErrorAction SilentlyContinue } } catch {}
+        try { if (Test-Path -LiteralPath $stderrLog) { $err = Get-Content -LiteralPath $stderrLog -Raw -ErrorAction SilentlyContinue } } catch {}
+
+        # Return object so callers can decide how to handle stderr chatter
+        return [pscustomobject]@{
+            ExitCode = [int]$p.ExitCode
+            StdOut   = $out
+            StdErr   = $err
+            AllText  = (($out + "`n" + $err).Trim())
+        }
+    }
+    finally {
+        try { if (Test-Path -LiteralPath $stdoutLog) { Remove-Item -LiteralPath $stdoutLog -Force -ErrorAction SilentlyContinue } } catch {}
+        try { if (Test-Path -LiteralPath $stderrLog) { Remove-Item -LiteralPath $stderrLog -Force -ErrorAction SilentlyContinue } } catch {}
+    }
+}
+
+
+
 function Resolve-ToolPath {
     param(
         [Parameter(Mandatory)][string]$RelativePath,
@@ -733,8 +770,11 @@ function Replace-WithBackup {
 # HandBrake encoder auto-detect
 # -----------------------------
 function Get-HandBrakeEncodersText {
-    $out = & $HandBrakeCliPath "--help" 2>&1 | Out-String
-    return $out
+    $r = Invoke-NativeCapture -FilePath $HandBrakeCliPath -ArgumentList @("--help")
+    if ($r.ExitCode -ne 0) {
+        throw ("HandBrakeCLI --help failed (exit {0}): {1}" -f $r.ExitCode, $r.AllText)
+    }
+    return ($r.AllText | Out-String)
 }
 
 function Get-MachineVideoControllers {
@@ -1038,7 +1078,11 @@ foreach ($f in $discImages) {
             if ($DryRun) {
                 $bestTitle = [pscustomobject]@{ Title=1; DurationSec=3600 }
             } else {
-                $scanLines = & $HandBrakeCliPath -i $hbInput --scan 2>&1
+                $scanRun = Invoke-NativeCapture -FilePath $HandBrakeCliPath -ArgumentList @("-i", $hbInput, "--scan")
+			if ($scanRun.ExitCode -ne 0) {
+				throw ("HandBrakeCLI scan failed (exit {0}): {1}" -f $scanRun.ExitCode, $scanRun.AllText)
+			}
+			$scanLines = ($scanRun.AllText -split "(`r`n|`n|`r)")
                 $titles = Parse-HandBrakeScanTitles -ScanLines $scanLines
                 if (-not $titles -or $titles.Count -eq 0) { throw "No titles found in scan output." }
                 $bestTitle = Select-BestDvdTitle -Titles $titles -MinSeconds $DvdMinTitleSeconds
@@ -1114,6 +1158,24 @@ $Worker = {
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = "Stop"
+	
+	function Invoke-NativeCapture {
+    param([string]$FilePath,[string[]]$ArgumentList=@())
+    $stdoutLog = Join-Path $env:TEMP ("native-" + [guid]::NewGuid().ToString() + ".out.log")
+    $stderrLog = Join-Path $env:TEMP ("native-" + [guid]::NewGuid().ToString() + ".err.log")
+    try {
+        $p = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+        $out=""; $err=""
+        try { if (Test-Path -LiteralPath $stdoutLog) { $out = Get-Content -LiteralPath $stdoutLog -Raw -ErrorAction SilentlyContinue } } catch {}
+        try { if (Test-Path -LiteralPath $stderrLog) { $err = Get-Content -LiteralPath $stderrLog -Raw -ErrorAction SilentlyContinue } } catch {}
+        return [pscustomobject]@{ ExitCode=[int]$p.ExitCode; AllText=(($out+"`n"+$err).Trim()) }
+    }
+    finally {
+        try { if (Test-Path -LiteralPath $stdoutLog) { Remove-Item -LiteralPath $stdoutLog -Force -ErrorAction SilentlyContinue } } catch {}
+        try { if (Test-Path -LiteralPath $stderrLog) { Remove-Item -LiteralPath $stderrLog -Force -ErrorAction SilentlyContinue } } catch {}
+    }
+}
 
     function Invoke-FfprobeJson {
         param([string]$ArgsLine,[string]$TargetPath)
@@ -1273,8 +1335,8 @@ $Worker = {
             "--optimize"
         )
         if ($DryRun) { return 0 }
-        & $HandBrakeCliPath @hbArgs 2>&1 | Out-Null
-        return $LASTEXITCODE
+$r = Invoke-NativeCapture -FilePath $HandBrakeCliPath -ArgumentList $hbArgs
+return [int]$r.ExitCode
     }
 
     # ---- Do work ----
@@ -1383,6 +1445,7 @@ $Worker = {
 # Run parallel processing for non-disc files
 # -----------------------------
 Write-Log ("Processing non-disc files: {0}" -f $others.Count) "INFO" "Cyan"
+
 
 # Pre-filter terminal skip + MaxTotalInputGB gate is handled in main loop when scheduling
 $queue = New-Object System.Collections.Generic.Queue[System.IO.FileInfo]

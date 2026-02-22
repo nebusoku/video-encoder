@@ -243,6 +243,7 @@ function Ensure-Ffmpeg {
 
 function Ensure-HandBrake {
     param([string]$Root)
+
     $installPath = Join-Path $Root "handbrake"
     $exe = Join-Path $installPath "HandBrakeCLI.exe"
 
@@ -252,6 +253,8 @@ function Ensure-HandBrake {
     }
 
     Ensure-Directory -Path $Root
+    Ensure-Directory -Path $installPath
+
     $release = Get-LatestGitHubRelease -Repo "HandBrake/HandBrake"
     $asset = $release.assets | Where-Object { $_.name -match '^HandBrakeCLI-.*-win-x86_64\.zip$' } | Select-Object -First 1
     if (-not $asset) { throw "Could not find HandBrakeCLI win-x86_64 zip in latest release." }
@@ -259,14 +262,23 @@ function Ensure-HandBrake {
     $zip = Join-Path $env:TEMP $asset.name
     Invoke-DownloadFile -Url $asset.browser_download_url -DestinationPath $zip
 
-    Install-FromZipRoot -ZipPath $zip -InstallPath $installPath -Locator {
-        param($extractRoot)
-        $dir = Get-ChildItem -LiteralPath $extractRoot -Directory | Select-Object -First 1
-        if ($dir) { return $dir.FullName }
-        return $extractRoot
-    }
+    # Extract to temp and locate the exe anywhere in the archive
+    $extractRoot = Join-Path ([System.IO.Path]::GetDirectoryName($zip)) ("extract-" + [System.Guid]::NewGuid().ToString("N"))
+    Expand-ZipTo -ZipPath $zip -DestinationPath $extractRoot
 
-    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    try {
+        $hb = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "HandBrakeCLI.exe" | Select-Object -First 1
+        if (-not $hb) {
+            throw "Could not locate HandBrakeCLI.exe in extracted archive at $extractRoot"
+        }
+
+        # Normalize to canonical path
+        Copy-Item -LiteralPath $hb.FullName -Destination $exe -Force
+    }
+    finally {
+        Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Ensure-FileBot {

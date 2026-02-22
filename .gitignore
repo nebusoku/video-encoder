@@ -1,0 +1,27 @@
+# --- Machine-generated tools (downloaded deps) ---
+/tools/
+/tools/**
+
+# --- Run outputs / state ---
+/Converted/
+/Converted/**
+/scripts/Logs/
+/scripts/Logs/**
+
+# --- Hardware profiles / configs (machine-specific) ---
+/HardwareProfile*.json
+/Converted/HardwareProfile*.json
+/Converted/**/HardwareProfile*.json
+
+# If you end up storing it under ProgramData you don't need this,
+# but this covers repo-local paths.
+
+# --- Transcripts / temp logs ---
+*.transcript.txt
+*.log
+
+# --- OS/editor noise ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
