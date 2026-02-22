@@ -12,6 +12,7 @@ $core = Join-Path $scriptDir "Test-PowerShellSyntax-Core.ps1"
 if (-not (Test-Path -LiteralPath $core)) {
     throw "Missing syntax-check core script: $core"
 }
+& $core @args; exit $LASTEXITCODE
 & $core @args
 # Parser-safe syntax checker for broad Windows PowerShell compatibility.
 

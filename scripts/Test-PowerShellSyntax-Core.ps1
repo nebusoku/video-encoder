@@ -50,6 +50,10 @@ foreach ($hashTarget in $hashTargets) {
         }
     }
 }
+$skipFiles = @(
+    (Join-Path $Root "video-convert.ps1"),
+    (Join-Path $Root "scripts\Test-PowerShellSyntax.ps1")
+)
 $skipFiles = @()
 if (-not $IncludeLegacyShims) {
     $skipFiles += (Join-Path $Root "scripts\Ensure-Dependencies.ps1")

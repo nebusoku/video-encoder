@@ -13,6 +13,7 @@ if (-not (Test-Path -LiteralPath $core)) {
     throw "Missing launcher core script: $core"
 }
 & $core @args
+exit $LASTEXITCODE
 }
 & $core @args
 # Parser-safe launcher for broad Windows PowerShell compatibility (no param()/CmdletBinding usage).
