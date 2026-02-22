@@ -42,8 +42,8 @@ param(
     [string]$RootPath = "",
 
     # Mode (if not specified, you will be prompted): 1=TV(720p), 2=Movies(1080p)
-    [ValidateSet("","1","2")]
-    [string]$Mode = "",
+	[ValidateSet("","1","2","TV","MOVIES","TV-720P","MOVIES-1080P")]
+	[string]$Mode = "",
 
     # Portable tool paths (optional overrides)
     [string]$FfprobePath      = "",
@@ -178,8 +178,26 @@ function Resolve-ToolPath {
 # -----------------------------
 # Prompt for RootPath + Mode if not provided
 # -----------------------------
+# -----------------------------
+# Normalize Mode (human-friendly + legacy support)
+# -----------------------------
 if ($ProbeHardwareOnly -and (-not $Mode -or $Mode.Trim() -eq "")) {
-    $Mode = "1"
+    $Mode = "TV"
+}
+
+$modeRaw = if ($Mode) { $Mode.Trim().ToUpperInvariant() } else { "" }
+
+switch ($modeRaw) {
+    "" { }  # leave empty so prompt can run
+    "1" { $Mode = "TV" }
+    "TV" { $Mode = "TV" }
+    "TV-720P" { $Mode = "TV" }
+
+    "2" { $Mode = "MOVIES" }
+    "MOVIES" { $Mode = "MOVIES" }
+    "MOVIES-1080P" { $Mode = "MOVIES" }
+
+    default { throw "Invalid Mode '$Mode'. Valid: TV, MOVIES (or legacy 1/2)." }
 }
 
 if (-not $ProbeHardwareOnly) {
@@ -192,7 +210,10 @@ if (-not $ProbeHardwareOnly) {
 }
 
 if (-not $Mode -or $Mode.Trim() -eq "") {
-    while ($Mode -notin @("1","2")) {
+    while ($Mode -notin @("TV","MOVIES")) {
+		$sel = Read-Host "Enter 1 or 2"
+		if ($sel -eq "1") { $Mode = "TV" }
+		elseif ($sel -eq "2") { $Mode = "MOVIES" }
         Write-Host ""
         Write-Host "Select mode:" -ForegroundColor Cyan
         Write-Host "  1) TV Shows (target 720p + TV FileBot rename)" -ForegroundColor Gray
@@ -203,25 +224,26 @@ if (-not $Mode -or $Mode.Trim() -eq "") {
 
 # Mode-specific targets
 switch ($Mode) {
-    "1" {
+    "TV" {
         $TargetMaxWidth  = 1280
         $TargetMaxHeight = 720
         $AllowMaxWidth   = 1280
         $AllowMaxHeight  = 720
         $ModeLabel       = "TV-720p"
         $FileBotDb       = "TheMovieDB::TV"
-        # Baked-in TV format (safe: only prints imdbid if present)
         $FileBotFormat   = "{n} - {s00e00} - {vf}{if(imdbid) ' ('+imdbid+')'}{'.'}{ext}"
     }
-    "2" {
+    "MOVIES" {
         $TargetMaxWidth  = 1920
         $TargetMaxHeight = 1080
         $AllowMaxWidth   = 1920
         $AllowMaxHeight  = 1080
         $ModeLabel       = "Movies-1080p"
         $FileBotDb       = "TheMovieDB"
-        # Baked-in Movie format (safe: only prints imdbid if present)
         $FileBotFormat   = "{n} ({y}) - {vf}{if(imdbid) ' ('+imdbid+')'}{'.'}{ext}"
+    }
+    default {
+        throw "Mode normalization failed; Mode='$Mode' is not recognized."
     }
 }
 
@@ -276,23 +298,8 @@ else {
 $missingTools = @($requiredTools | Where-Object { -not (Test-Path -LiteralPath $_) })
 
 if ($missingTools.Count -gt 0) {
-
-    if (-not $EnsureDependencies -and -not $RefreshDependencies) {
-        $autoDep = Join-Path $ScriptDir "Ensure-Dependencies-Core.ps1"
-        if (-not (Test-Path -LiteralPath $autoDep)) {
-            $autoDep = Join-Path $ScriptDir "Ensure-Dependencies.ps1"
-        }
-
-        if (Test-Path -LiteralPath $autoDep) {
-            Write-Log "Missing required tools detected. Attempting automatic dependency bootstrap..." "WARN" "Yellow"
-            & $autoDep -ToolsRoot $toolsRoot -Components $depComponents
-        }
-    }
-
-    $missingTools = @($requiredTools | Where-Object { -not (Test-Path -LiteralPath $_) })
-    if ($missingTools.Count -gt 0) {
-        throw ("Tool(s) not found: " + ($missingTools -join ", ") + ". Run with -EnsureDependencies to download tools.")
-    }
+    throw ("Required tool(s) not found: " + ($missingTools -join ", ") +
+           ". Run 'Download / Update Tools' from the main menu first.")
 }
 Write-Log "=== Media Cleanup START ===" "INFO" "Cyan"
 Write-Log "Mode: $ModeLabel" "INFO" "Cyan"

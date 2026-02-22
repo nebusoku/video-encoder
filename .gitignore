@@ -25,3 +25,7 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 .vscode/
+
+# Repo-local hardware profiles
+/Config/hardware-profile-*.json
+/Config/*.log
