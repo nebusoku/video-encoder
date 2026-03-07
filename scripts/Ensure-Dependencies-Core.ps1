@@ -109,63 +109,38 @@ function Invoke-DownloadFile {
 
     Write-Info "Downloading: $Url"
 
-    $request = [System.Net.HttpWebRequest]::Create($Url)
-    $request.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+    # ---- Host allowlist ----
+    $allowedHosts = @(
+        "github.com",
+        "api.github.com",
+        "objects.githubusercontent.com",
+        "www.gyan.dev",
+        "www.filebot.net",
+        "get.filebot.net"
+    )
 
-    $response = $null
-    $responseStream = $null
-    $fileStream = $null
-
-    try {
-        $response = $request.GetResponse()
-        $totalBytes = [int64]$response.ContentLength
-        $responseStream = $response.GetResponseStream()
-
-        $parent = Split-Path -Parent $DestinationPath
-        if ($parent) { Ensure-Directory -Path $parent }
-
-        $fileStream = [System.IO.File]::Open($DestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-
-        $buffer = New-Object byte[] 65536
-        $downloaded = [int64]0
-        $downloadStart = Get-Date
-        $activity = "Downloading dependency"
-        $statusLabel = [System.IO.Path]::GetFileName($DestinationPath)
-
-        while (($read = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $fileStream.Write($buffer, 0, $read)
-            $downloaded += [int64]$read
-
-            $elapsed = (Get-Date) - $downloadStart
-            $elapsedSeconds = [Math]::Max(0.001, $elapsed.TotalSeconds)
-            $speedBytesPerSec = $downloaded / $elapsedSeconds
-            $speedLabel = (Format-ByteSize -Bytes $speedBytesPerSec) + "/s"
-
-            if ($totalBytes -gt 0) {
-                $percent = [int][Math]::Min(100, [Math]::Round(($downloaded * 100.0) / $totalBytes, 0))
-                $remainingBytes = [Math]::Max(0, $totalBytes - $downloaded)
-                $etaSeconds = if ($speedBytesPerSec -gt 0) { $remainingBytes / $speedBytesPerSec } else { 0 }
-                $etaLabel = Format-DurationShort -Duration ([TimeSpan]::FromSeconds($etaSeconds))
-
-                $status = "{0} of {1} ({2}%) | {3} | ETA {4}" -f (Format-ByteSize -Bytes $downloaded), (Format-ByteSize -Bytes $totalBytes), $percent, $speedLabel, $etaLabel
-                Write-Progress -Activity $activity -Status ("{0} :: {1}" -f $statusLabel, $status) -PercentComplete $percent
-            }
-            else {
-                $status = "{0} downloaded | {1}" -f (Format-ByteSize -Bytes $downloaded), $speedLabel
-                Write-Progress -Activity $activity -Status ("{0} :: {1}" -f $statusLabel, $status) -PercentComplete -1
-            }
-        }
-
-        Write-Progress -Activity $activity -Status "Completed" -Completed
-        Write-Info ("Download complete: {0} ({1})" -f $statusLabel, (Format-ByteSize -Bytes $downloaded))
+    $uri = [Uri]$Url
+    if ($allowedHosts -notcontains $uri.Host.ToLowerInvariant()) {
+        throw "Blocked download host: $($uri.Host). Not in allowlist."
     }
-    finally {
-        if ($fileStream) { $fileStream.Dispose() }
-        if ($responseStream) { $responseStream.Dispose() }
-        if ($response) { $response.Dispose() }
+
+    $parent = Split-Path -Parent $DestinationPath
+    if ($parent) { Ensure-Directory -Path $parent }
+
+    # ---- Prefer BITS (less suspicious to AV engines) ----
+    if (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue) {
+        Start-BitsTransfer -Source $Url -Destination $DestinationPath -ErrorAction Stop
     }
+    else {
+        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $DestinationPath -ErrorAction Stop
+    }
+
+    $size = (Get-Item -LiteralPath $DestinationPath).Length
+    $hash = (Get-FileHash -LiteralPath $DestinationPath -Algorithm SHA256).Hash
+
+    Write-Info ("Download complete: {0} ({1})" -f (Split-Path -Leaf $DestinationPath), (Format-ByteSize -Bytes $size))
+    Write-Info ("SHA256: $hash")
 }
-
 function Expand-ZipTo {
     param(
         [Parameter(Mandatory)][string]$ZipPath,
