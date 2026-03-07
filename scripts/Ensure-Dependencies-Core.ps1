@@ -109,11 +109,11 @@ function Invoke-DownloadFile {
 
     Write-Info "Downloading: $Url"
 
-    # ---- Host allowlist ----
     $allowedHosts = @(
         "github.com",
         "api.github.com",
         "objects.githubusercontent.com",
+        "codeload.github.com",
         "www.gyan.dev",
         "www.filebot.net",
         "get.filebot.net"
@@ -127,19 +127,26 @@ function Invoke-DownloadFile {
     $parent = Split-Path -Parent $DestinationPath
     if ($parent) { Ensure-Directory -Path $parent }
 
-    # ---- Prefer BITS (less suspicious to AV engines) ----
+    if (Test-Path -LiteralPath $DestinationPath) {
+        Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
+    }
+
     if (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue) {
-        Start-BitsTransfer -Source $Url -Destination $DestinationPath -ErrorAction Stop
+        Start-BitsTransfer -Source $Url -Destination $DestinationPath -DisplayName "video-encoder dependency download" -ErrorAction Stop
     }
     else {
         Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $DestinationPath -ErrorAction Stop
+    }
+
+    if (-not (Test-Path -LiteralPath $DestinationPath)) {
+        throw "Download failed; file not found after transfer: $DestinationPath"
     }
 
     $size = (Get-Item -LiteralPath $DestinationPath).Length
     $hash = (Get-FileHash -LiteralPath $DestinationPath -Algorithm SHA256).Hash
 
     Write-Info ("Download complete: {0} ({1})" -f (Split-Path -Leaf $DestinationPath), (Format-ByteSize -Bytes $size))
-    Write-Info ("SHA256: $hash")
+    Write-Info ("SHA256: {0}" -f $hash)
 }
 function Expand-ZipTo {
     param(
@@ -241,7 +248,7 @@ function Ensure-FFmpeg {
         }
         New-Item -ItemType Directory -Path $binPath -Force | Out-Null
 
-        Copy-Item -LiteralPath (Join-Path $srcBin "*") -Destination $binPath -Recurse -Force
+        Copy-Item -Path (Join-Path $srcBin "*") -Destination $binPath -Recurse -Force
 
         if (-not (Test-Path -LiteralPath $ffmpegExe)) { throw "FFmpeg normalization failed: missing $ffmpegExe" }
         if (-not (Test-Path -LiteralPath $ffprobeExe)) { throw "FFmpeg normalization failed: missing $ffprobeExe" }
@@ -352,7 +359,7 @@ $hitPs1 = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "filebo
 $hitJar = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "FileBot.jar" -ErrorAction SilentlyContinue | Select-Object -First 1
 
 Write-Info "Entry point detection results:"
-Write-Info ("  FileBot.exe : " + ($(if ($hitGui) { $hitGui.FullName } else { "NOT FOUND" })))
+Write-Info ("  filebot.exe : " + ($(if ($hitExe) { $hitExe.FullName } else { "NOT FOUND" })))
 Write-Info ("  filebot.cmd : " + ($(if ($hitCmd) { $hitCmd.FullName } else { "NOT FOUND" })))
 Write-Info ("  FileBot.exe : " + ($(if ($hitGui) { $hitGui.FullName } else { "NOT FOUND" })))
 Write-Info ("  filebot.ps1 : " + ($(if ($hitPs1) { $hitPs1.FullName } else { "NOT FOUND" })))
