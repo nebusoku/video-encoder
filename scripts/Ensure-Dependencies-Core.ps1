@@ -1,423 +1,269 @@
-# NOTE: intentionally avoid param(...) to maximize compatibility with older Windows PowerShell hosts.
-$ToolsRoot = ""
-$ForceRefresh = $false
-$Components = ""
-
-for ($i = 0; $i -lt $args.Count; $i++) {
-    $arg = [string]$args[$i]
-
-    if ($arg -eq "-ToolsRoot" -and $i + 1 -lt $args.Count) { $ToolsRoot = [string]$args[++$i]; continue }
-    if ($arg.StartsWith("-ToolsRoot:")) { $ToolsRoot = [string]$arg.Substring(11); continue }
-
-    if ($arg -eq "-ForceRefresh") { $ForceRefresh = $true; continue }
-    if ($arg.StartsWith("-ForceRefresh:")) {
-        $v = $arg.Substring(14).ToLowerInvariant()
-        if ($v -in @('true','1')) { $ForceRefresh = $true }
-        elseif ($v -in @('false','0')) { $ForceRefresh = $false }
-        continue
-    }
-
-    if ($arg -eq "-Components" -and $i + 1 -lt $args.Count) { $Components = [string]$args[++$i]; continue }
-    if ($arg.StartsWith("-Components:")) { $Components = [string]$arg.Substring(12); continue }
-    switch -Regex ($arg) {
-        '^-ToolsRoot$' {
-            if ($i + 1 -lt $args.Count) { $ToolsRoot = [string]$args[$i + 1]; $i++ }
-            continue
-        }
-        '^-ToolsRoot:(.+)$' {
-            $ToolsRoot = [string]$Matches[1]
-            continue
-        }
-        '^-ForceRefresh$' {
-            $ForceRefresh = $true
-            continue
-        }
-        '^-ForceRefresh:(?i:true|1)$' {
-            $ForceRefresh = $true
-            continue
-        }
-        '^-ForceRefresh:(?i:false|0)$' {
-            $ForceRefresh = $false
-            continue
-        }
-        '^-Components$' {
-            if ($i + 1 -lt $args.Count) { $Components = [string]$args[$i + 1]; $i++ }
-            continue
-        }
-        '^-Components:(.+)$' {
-            $Components = [string]$Matches[1]
-            continue
-        }
-    }
-}
+[CmdletBinding()]
+param(
+    [string]$RepoRoot = "",
+    [switch]$ForceRedownload
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not $ToolsRoot) { $ToolsRoot = Join-Path (Split-Path -Parent $ScriptDir) "tools" }
+function Write-Info([string]$msg) { Write-Host $msg -ForegroundColor Gray }
+function Write-Warn([string]$msg) { Write-Host $msg -ForegroundColor Yellow }
+function Write-Err([string]$msg)  { Write-Host $msg -ForegroundColor Red }
+function Write-Ok([string]$msg)   { Write-Host $msg -ForegroundColor Green }
+function Write-Cyan([string]$msg) { Write-Host $msg -ForegroundColor Cyan }
 
-$validComponents = @("FFmpeg","HandBrake","FileBot")
-$componentList = @()
-
-if (-not $Components -or $Components.Trim() -eq "") {
-    $componentList = @("FFmpeg","HandBrake","FileBot")
+function Get-RepoRoot {
+    if ($RepoRoot -and $RepoRoot.Trim()) {
+        return (Resolve-Path -LiteralPath $RepoRoot).Path
+    }
+    return (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).Path
 }
-else {
-    $componentList = @($Components -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
-}
-
-$invalidComponents = @($componentList | Where-Object { $validComponents -notcontains $_ })
-if ($invalidComponents.Count -gt 0) {
-    throw ("Invalid component(s): " + ($invalidComponents -join ", ") + ". Valid values: " + ($validComponents -join ", "))
-}
-$Components = @($componentList | Select-Object -Unique)
-
-function Write-Info { param([string]$Message) Write-Host "[deps] $Message" -ForegroundColor Cyan }
 
 function Ensure-Directory {
     param([Parameter(Mandatory)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) { New-Item -Path $Path -ItemType Directory | Out-Null }
-}
-
-function Format-ByteSize {
-    param([double]$Bytes)
-
-    if ($Bytes -lt 1KB) { return ("{0:N0} B" -f $Bytes) }
-    if ($Bytes -lt 1MB) { return ("{0:N1} KB" -f ($Bytes / 1KB)) }
-    if ($Bytes -lt 1GB) { return ("{0:N1} MB" -f ($Bytes / 1MB)) }
-    return ("{0:N2} GB" -f ($Bytes / 1GB))
-}
-
-function Format-DurationShort {
-    param([TimeSpan]$Duration)
-
-    if ($Duration.TotalHours -ge 1) {
-        return ("{0}h {1}m {2}s" -f [int]$Duration.TotalHours, $Duration.Minutes, $Duration.Seconds)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -ItemType Directory -Force | Out-Null
     }
-    if ($Duration.TotalMinutes -ge 1) {
-        return ("{0}m {1}s" -f [int]$Duration.TotalMinutes, $Duration.Seconds)
-    }
-    return ("{0}s" -f [int][Math]::Max(0, [Math]::Round($Duration.TotalSeconds)))
 }
 
-function Invoke-DownloadFile {
+function Remove-DirectoryContents {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string[]]$ExcludeNames = @()
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($ExcludeNames -contains $_.Name) { return }
+        try {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+        } catch {
+            throw "Failed clearing '$($_.FullName)': $($_.Exception.Message)"
+        }
+    }
+}
+
+function Download-File {
     param(
         [Parameter(Mandatory)][string]$Url,
-        [Parameter(Mandatory)][string]$DestinationPath
+        [Parameter(Mandatory)][string]$Destination
     )
 
-    Write-Info "Downloading: $Url"
-
-    $allowedHosts = @(
-        "github.com",
-        "api.github.com",
-        "objects.githubusercontent.com",
-        "codeload.github.com",
-        "www.gyan.dev",
-        "www.filebot.net",
-        "get.filebot.net"
-    )
-
-    $uri = [Uri]$Url
-    if ($allowedHosts -notcontains $uri.Host.ToLowerInvariant()) {
-        throw "Blocked download host: $($uri.Host). Not in allowlist."
-    }
-
-    $parent = Split-Path -Parent $DestinationPath
-    if ($parent) { Ensure-Directory -Path $parent }
-
-    if (Test-Path -LiteralPath $DestinationPath) {
-        Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
-    }
-
-    if (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue) {
-        Start-BitsTransfer -Source $Url -Destination $DestinationPath -DisplayName "video-encoder dependency download" -ErrorAction Stop
-    }
-    else {
-        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $DestinationPath -ErrorAction Stop
-    }
-
-    if (-not (Test-Path -LiteralPath $DestinationPath)) {
-        throw "Download failed; file not found after transfer: $DestinationPath"
-    }
-
-    $size = (Get-Item -LiteralPath $DestinationPath).Length
-    $hash = (Get-FileHash -LiteralPath $DestinationPath -Algorithm SHA256).Hash
-
-    Write-Info ("Download complete: {0} ({1})" -f (Split-Path -Leaf $DestinationPath), (Format-ByteSize -Bytes $size))
-    Write-Info ("SHA256: {0}" -f $hash)
+    Write-Cyan ("Downloading: " + $Url)
+    Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing
 }
-function Expand-ZipTo {
+
+function Expand-ZipToTemp {
     param(
         [Parameter(Mandatory)][string]$ZipPath,
-        [Parameter(Mandatory)][string]$DestinationPath
+        [Parameter(Mandatory)][string]$TempRoot
     )
-    if (Test-Path -LiteralPath $DestinationPath) { Remove-Item -LiteralPath $DestinationPath -Recurse -Force }
-    Expand-Archive -Path $ZipPath -DestinationPath $DestinationPath -Force
+
+    Ensure-Directory -Path $TempRoot
+    $extractPath = Join-Path $TempRoot ([IO.Path]::GetFileNameWithoutExtension($ZipPath))
+    if (Test-Path -LiteralPath $extractPath) {
+        Remove-Item -LiteralPath $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Expand-Archive -LiteralPath $ZipPath -DestinationPath $extractPath -Force
+    return $extractPath
 }
 
-function Get-LatestGitHubRelease {
-    param([Parameter(Mandatory)][string]$Repo)
-
-    $headers = @{ "User-Agent" = "video-encoder-deps" }
-    $latestApi = "https://api.github.com/repos/$Repo/releases/latest"
-
-    try {
-        return Invoke-RestMethod -Uri $latestApi -UseBasicParsing -Headers $headers
-    }
-    catch {
-        Write-Info "Latest release API failed for $Repo. Falling back to releases list..."
-        $releasesApi = "https://api.github.com/repos/$Repo/releases?per_page=25"
-        $releases = Invoke-RestMethod -Uri $releasesApi -UseBasicParsing -Headers $headers
-        $candidate = $releases | Where-Object { -not $_.draft -and -not $_.prerelease } | Select-Object -First 1
-        if (-not $candidate) {
-            throw "Could not determine a stable release for $Repo from GitHub API."
-        }
-        return $candidate
-    }
-}
-
-function Install-FromZipRoot {
+function Find-ParentContainingFile {
     param(
-        [Parameter(Mandatory)][string]$ZipPath,
-        [Parameter(Mandatory)][string]$InstallPath,
-        [Parameter(Mandatory)][ScriptBlock]$Locator
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$FileName
     )
 
-    $extractRoot = Join-Path ([System.IO.Path]::GetDirectoryName($ZipPath)) ("extract-" + [System.Guid]::NewGuid().ToString("N"))
-    Expand-ZipTo -ZipPath $ZipPath -DestinationPath $extractRoot
-
-    $sourcePath = & $Locator $extractRoot
-    if (-not $sourcePath -or -not (Test-Path -LiteralPath $sourcePath)) {
-        throw "Could not locate extracted dependency content in $extractRoot"
-    }
-
-    if (Test-Path -LiteralPath $InstallPath) { Remove-Item -LiteralPath $InstallPath -Recurse -Force }
-    New-Item -Path $InstallPath -ItemType Directory | Out-Null
-    Copy-Item -Path (Join-Path $sourcePath '*') -Destination $InstallPath -Recurse -Force
-
-    Remove-Item -LiteralPath $extractRoot -Recurse -Force
+    $hit = Get-ChildItem -LiteralPath $Root -Recurse -Filter $FileName -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $hit) { return $null }
+    return $hit.Directory.FullName
 }
 
-function Ensure-FFmpeg {
-    param([string]$Root)
+function Copy-DirectoryContents {
+    param(
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][string]$TargetDir
+    )
 
-    $installPath = Join-Path $Root "ffmpeg"
-    $binPath = Join-Path $installPath "bin"
-    $ffmpegExe = Join-Path $binPath "ffmpeg.exe"
-    $ffprobeExe = Join-Path $binPath "ffprobe.exe"
+    Ensure-Directory -Path $TargetDir
+    Copy-Item -Path (Join-Path $SourceDir '*') -Destination $TargetDir -Recurse -Force
+}
 
-    if (-not $ForceRefresh -and (Test-Path -LiteralPath $ffmpegExe) -and (Test-Path -LiteralPath $ffprobeExe)) {
-        Write-Info "FFmpeg already present."
-        return
+function Prompt-YesNo {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [bool]$DefaultYes = $true
+    )
+
+    $suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+    $resp = Read-Host "$Prompt $suffix"
+    if (-not $resp -or -not $resp.Trim()) { return $DefaultYes }
+
+    switch ($resp.Trim().ToLowerInvariant()) {
+        "y" { return $true }
+        "yes" { return $true }
+        "n" { return $false }
+        "no" { return $false }
+        default { return $DefaultYes }
     }
+}
 
-    Ensure-Directory -Path $Root
-    Ensure-Directory -Path $installPath
-    Ensure-Directory -Path $binPath
+$root = Get-RepoRoot
+$toolsRoot = Join-Path $root "tools"
+$tempRoot = Join-Path $root "_downloads"
 
-    $zipUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-    $zip = Join-Path $env:TEMP "ffmpeg-release-essentials.zip"
-    Invoke-DownloadFile -Url $zipUrl -DestinationPath $zip
+$ffmpegDir    = Join-Path $toolsRoot "ffmpeg"
+$handBrakeDir = Join-Path $toolsRoot "handbrake"
+$fileBotDir   = Join-Path $toolsRoot "filebot"
 
-    $extractRoot = Join-Path ([System.IO.Path]::GetDirectoryName($zip)) ("extract-" + [System.Guid]::NewGuid().ToString("N"))
-    Expand-ZipTo -ZipPath $zip -DestinationPath $extractRoot
+$ffmpegExe    = Join-Path $ffmpegDir "bin\ffmpeg.exe"
+$ffprobeExe   = Join-Path $ffmpegDir "bin\ffprobe.exe"
+$handBrakeExe = Join-Path $handBrakeDir "HandBrakeCLI.exe"
+$fileBotCmd   = Join-Path $fileBotDir "filebot.cmd"
+$fileBotExe   = Join-Path $fileBotDir "FileBot.exe"
 
-    try {
-        # Find ffmpeg.exe anywhere, then treat its directory as the "bin" folder
-        $ffmpegHit = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "ffmpeg.exe" -ErrorAction SilentlyContinue |
-                     Select-Object -First 1
-        if (-not $ffmpegHit) {
-            throw "Could not locate ffmpeg.exe in extracted archive."
+Ensure-Directory -Path $toolsRoot
+Ensure-Directory -Path $tempRoot
+Ensure-Directory -Path $ffmpegDir
+Ensure-Directory -Path $handBrakeDir
+Ensure-Directory -Path $fileBotDir
+
+# Current URLs / versions
+# HandBrake current version shown on official downloads pages: 1.11.1
+# FileBot current Windows portable ZIP shown on official download page: 5.2.1-portable.zip
+# FFmpeg current release page lists ffmpeg-release-essentials.zip
+$downloads = [pscustomobject]@{
+    FFmpeg = [pscustomobject]@{
+        Label = "FFmpeg Essentials"
+        Url   = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+        Zip   = Join-Path $tempRoot "ffmpeg-release-essentials.zip"
+        TargetDir = $ffmpegDir
+    }
+    HandBrake = [pscustomobject]@{
+        Label = "HandBrakeCLI"
+        Url   = "https://handbrake.fr/rotation.php?file=HandBrakeCLI-1.11.1-win-x86_64.zip"
+        Zip   = Join-Path $tempRoot "HandBrakeCLI-1.11.1-win-x86_64.zip"
+        TargetDir = $handBrakeDir
+    }
+    FileBot = [pscustomobject]@{
+        Label = "FileBot Portable"
+        Url   = "https://get.filebot.net/filebot/FileBot_5.2.1/FileBot_5.2.1-portable.zip"
+        Zip   = Join-Path $tempRoot "FileBot_5.2.1-portable.zip"
+        TargetDir = $fileBotDir
+    }
+}
+
+Write-Cyan "Dependency Setup / Update"
+Write-Info ("Repo Root : " + $root)
+Write-Info ("Tools Root: " + $toolsRoot)
+Write-Host ""
+
+Write-Info ("FFmpeg    : " + $(if (Test-Path -LiteralPath $ffmpegExe) { "Present" } else { "Missing" }))
+Write-Info ("FFprobe   : " + $(if (Test-Path -LiteralPath $ffprobeExe) { "Present" } else { "Missing" }))
+Write-Info ("HandBrake : " + $(if (Test-Path -LiteralPath $handBrakeExe) { "Present" } else { "Missing" }))
+Write-Info ("FileBot   : " + $(if ((Test-Path -LiteralPath $fileBotCmd) -or (Test-Path -LiteralPath $fileBotExe)) { "Present" } else { "Missing" }))
+Write-Host ""
+
+$doFFmpeg = $ForceRedownload -or (-not (Test-Path -LiteralPath $ffmpegExe)) -or (-not (Test-Path -LiteralPath $ffprobeExe))
+$doHandBrake = $ForceRedownload -or (-not (Test-Path -LiteralPath $handBrakeExe))
+$doFileBot = $ForceRedownload -or (-not (Test-Path -LiteralPath $fileBotCmd) -and -not (Test-Path -LiteralPath $fileBotExe))
+
+if (-not $doFFmpeg)    { $doFFmpeg = Prompt-YesNo "FFmpeg already exists. Download/update anyway?" $false }
+if (-not $doHandBrake) { $doHandBrake = Prompt-YesNo "HandBrakeCLI already exists. Download/update anyway?" $false }
+if (-not $doFileBot)   { $doFileBot = Prompt-YesNo "FileBot already exists. Download/update anyway?" $false }
+
+try {
+    if ($doFFmpeg) {
+        Download-File -Url $downloads.FFmpeg.Url -Destination $downloads.FFmpeg.Zip
+        $extract = Expand-ZipToTemp -ZipPath $downloads.FFmpeg.Zip -TempRoot $tempRoot
+
+        # Locate extracted folder that contains bin\ffmpeg.exe
+        $ffmpegBinDir = Find-ParentContainingFile -Root $extract -FileName "ffmpeg.exe"
+        if (-not $ffmpegBinDir) { throw "Could not find ffmpeg.exe in extracted FFmpeg archive." }
+
+        # Copy the whole build root (parent of bin)
+        $buildRoot = Split-Path -Parent $ffmpegBinDir
+        Remove-DirectoryContents -Path $ffmpegDir
+        Copy-DirectoryContents -SourceDir $buildRoot -TargetDir $ffmpegDir
+
+        if (-not (Test-Path -LiteralPath $ffmpegExe) -or -not (Test-Path -LiteralPath $ffprobeExe)) {
+            throw "FFmpeg install incomplete after extraction."
         }
 
-        $srcBin = $ffmpegHit.Directory.FullName
-        $srcFfprobe = Join-Path $srcBin "ffprobe.exe"
-        if (-not (Test-Path -LiteralPath $srcFfprobe)) {
-            # Some builds still include ffprobe in same bin; if not, search for it
-            $ffprobeHit = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "ffprobe.exe" -ErrorAction SilentlyContinue |
-                          Select-Object -First 1
-            if (-not $ffprobeHit) { throw "Could not locate ffprobe.exe in extracted archive." }
-            $srcBin = $ffprobeHit.Directory.FullName
+        Write-Ok "FFmpeg updated successfully."
+    }
+
+    if ($doHandBrake) {
+        Download-File -Url $downloads.HandBrake.Url -Destination $downloads.HandBrake.Zip
+        $extract = Expand-ZipToTemp -ZipPath $downloads.HandBrake.Zip -TempRoot $tempRoot
+
+        $hbParent = Find-ParentContainingFile -Root $extract -FileName "HandBrakeCLI.exe"
+        if (-not $hbParent) { throw "Could not find HandBrakeCLI.exe in extracted archive." }
+
+        Remove-DirectoryContents -Path $handBrakeDir -ExcludeNames @("presets")
+        Copy-DirectoryContents -SourceDir $hbParent -TargetDir $handBrakeDir
+
+        if (-not (Test-Path -LiteralPath $handBrakeExe)) {
+            throw "HandBrakeCLI install incomplete after extraction."
         }
 
-        # Normalize: wipe target bin, then copy ALL runtime files into tools\ffmpeg\bin
-        if (Test-Path -LiteralPath $binPath) {
-            Remove-Item -LiteralPath $binPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Ok "HandBrakeCLI updated successfully."
+    }
+
+    if ($doFileBot) {
+        Download-File -Url $downloads.FileBot.Url -Destination $downloads.FileBot.Zip
+        $extract = Expand-ZipToTemp -ZipPath $downloads.FileBot.Zip -TempRoot $tempRoot
+
+        $fbParent = Find-ParentContainingFile -Root $extract -FileName "filebot.cmd"
+        if (-not $fbParent) {
+            $fbParent = Find-ParentContainingFile -Root $extract -FileName "FileBot.exe"
         }
-        New-Item -ItemType Directory -Path $binPath -Force | Out-Null
+        if (-not $fbParent) { throw "Could not find FileBot portable files in extracted archive." }
 
-        Copy-Item -Path (Join-Path $srcBin "*") -Destination $binPath -Recurse -Force
-
-        if (-not (Test-Path -LiteralPath $ffmpegExe)) { throw "FFmpeg normalization failed: missing $ffmpegExe" }
-        if (-not (Test-Path -LiteralPath $ffprobeExe)) { throw "FFmpeg normalization failed: missing $ffprobeExe" }
-    }
-    finally {
-        Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Ensure-HandBrake {
-    param([string]$Root)
-
-    $installPath = Join-Path $Root "handbrake"
-    $exe = Join-Path $installPath "HandBrakeCLI.exe"
-
-    if (-not $ForceRefresh -and (Test-Path -LiteralPath $exe)) {
-        Write-Info "HandBrakeCLI already present."
-        return
-    }
-
-    Ensure-Directory -Path $Root
-    Ensure-Directory -Path $installPath
-
-    $release = Get-LatestGitHubRelease -Repo "HandBrake/HandBrake"
-    $asset = $release.assets | Where-Object { $_.name -match '^HandBrakeCLI-.*-win-x86_64\.zip$' } | Select-Object -First 1
-    if (-not $asset) { throw "Could not find HandBrakeCLI win-x86_64 zip in latest release." }
-
-    $zip = Join-Path $env:TEMP $asset.name
-    Invoke-DownloadFile -Url $asset.browser_download_url -DestinationPath $zip
-
-    # Extract to temp and locate the exe anywhere in the archive
-    $extractRoot = Join-Path ([System.IO.Path]::GetDirectoryName($zip)) ("extract-" + [System.Guid]::NewGuid().ToString("N"))
-    Expand-ZipTo -ZipPath $zip -DestinationPath $extractRoot
-
-    try {
-        $hb = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "HandBrakeCLI.exe" | Select-Object -First 1
-        if (-not $hb) {
-            throw "Could not locate HandBrakeCLI.exe in extracted archive at $extractRoot"
+        # Preserve portable FileBot data folder if present
+        $preserveData = Test-Path -LiteralPath (Join-Path $fileBotDir "data")
+        $dataTemp = $null
+        if ($preserveData) {
+            $dataTemp = Join-Path $tempRoot "filebot-data-backup"
+            if (Test-Path -LiteralPath $dataTemp) {
+                Remove-Item -LiteralPath $dataTemp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            Copy-Item -LiteralPath (Join-Path $fileBotDir "data") -Destination $dataTemp -Recurse -Force
         }
 
-        # Normalize to canonical path
-        Copy-Item -LiteralPath $hb.FullName -Destination $exe -Force
-    }
-    finally {
-        Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    }
-}
+        Remove-DirectoryContents -Path $fileBotDir -ExcludeNames @("data")
+        Copy-DirectoryContents -SourceDir $fbParent -TargetDir $fileBotDir
 
-function Ensure-FileBot {
-    param([string]$Root)
-
-    $installPath = Join-Path $Root "filebot"
-    $portableExe = Join-Path $installPath "filebot.exe"
-	$ps1Path     = Join-Path $installPath "filebot.ps1"
-	$jarPath     = Join-Path $installPath "FileBot.jar"
-    $cmdPath     = Join-Path $installPath "filebot.cmd"
-    $exePath     = Join-Path $installPath "FileBot.exe"
-
-    if (-not $ForceRefresh -and (
-        (Test-Path -LiteralPath $portableExe) -or
-        (Test-Path -LiteralPath $cmdPath) -or
-        (Test-Path -LiteralPath $exePath) -or
-        (Test-Path -LiteralPath $ps1Path) -or
-        (Test-Path -LiteralPath $jarPath)
-    )) {
-        Write-Info "FileBot already present."
-        return
-    }
-
-    Ensure-Directory -Path $Root
-    Ensure-Directory -Path $installPath
-
-    # Resolve official portable ZIP
-    $dl = Invoke-WebRequest -UseBasicParsing -Uri "https://www.filebot.net/download.html"
-    $href = $null
-    foreach ($l in $dl.Links) {
-        if ($l.href -and $l.href -match '(?i)(^|/).*portable.*\.zip$') { $href = [string]$l.href; break }
-    }
-    if (-not $href) { throw "Could not find FileBot portable ZIP link on filebot.net/download.html" }
-    if ($href -notmatch '^https?://') {
-        $href = ([Uri]::new([Uri]::new("https://www.filebot.net/download.html"), $href)).AbsoluteUri
-    }
-
-    $zipName = Split-Path -Leaf $href
-    if (-not $zipName) { $zipName = "FileBot-portable.zip" }
-
-    $zip = Join-Path $env:TEMP $zipName
-    Invoke-DownloadFile -Url $href -DestinationPath $zip
-
-    $extractRoot = Join-Path ([System.IO.Path]::GetDirectoryName($zip)) ("extract-" + [System.Guid]::NewGuid().ToString("N"))
-    Expand-ZipTo -ZipPath $zip -DestinationPath $extractRoot
-	Write-Info "FileBot ZIP extracted to: $extractRoot"
-
-	$topItems = Get-ChildItem -LiteralPath $extractRoot -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20
-	Write-Info "First 20 extracted items:"
-	foreach ($i in $topItems) {
-		Write-Info ("  " + $i.FullName)
-	}
-
-    try {
-        # Locate runtime folder (prefer portable exe)
-$hitExe = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "filebot.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-$hitCmd = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "filebot.cmd" -ErrorAction SilentlyContinue | Select-Object -First 1
-$hitGui = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "FileBot.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-$hitPs1 = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "filebot.ps1" -ErrorAction SilentlyContinue | Select-Object -First 1
-$hitJar = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "FileBot.jar" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-Write-Info "Entry point detection results:"
-Write-Info ("  filebot.exe : " + ($(if ($hitExe) { $hitExe.FullName } else { "NOT FOUND" })))
-Write-Info ("  filebot.cmd : " + ($(if ($hitCmd) { $hitCmd.FullName } else { "NOT FOUND" })))
-Write-Info ("  FileBot.exe : " + ($(if ($hitGui) { $hitGui.FullName } else { "NOT FOUND" })))
-Write-Info ("  filebot.ps1 : " + ($(if ($hitPs1) { $hitPs1.FullName } else { "NOT FOUND" })))
-Write-Info ("  FileBot.jar : " + ($(if ($hitJar) { $hitJar.FullName } else { "NOT FOUND" })))
-
-$runtimeDir = $null
-if ($hitExe) { $runtimeDir = $hitExe.Directory.FullName }
-elseif ($hitCmd) { $runtimeDir = $hitCmd.Directory.FullName }
-elseif ($hitGui) { $runtimeDir = $hitGui.Directory.FullName }
-elseif ($hitPs1) { $runtimeDir = $hitPs1.Directory.FullName }
-elseif ($hitJar) { $runtimeDir = $hitJar.Directory.FullName }
-
-if (-not $runtimeDir) {
-    throw "Could not locate FileBot entrypoint in extracted archive. See log output above."
-}
-
-# If entrypoint is under a nested folder, copy that folder’s contents;
-# but if it looks like it's inside a deep 'bin' subdir, copy one level up.
-$copySource = $runtimeDir
-$parent = Split-Path -Parent $runtimeDir
-if ($parent -and (
-        (Test-Path -LiteralPath (Join-Path $parent "lib")) -or
-        (Test-Path -LiteralPath (Join-Path $parent "jre"))
-    )) {
-    $copySource = $parent
-}
-
-Write-Info ("FileBot copy source resolved to: " + $copySource)
-
-        # Normalize: wipe tools\filebot and copy runtime folder contents directly into it
-        if (Test-Path -LiteralPath $installPath) {
-            Remove-Item -LiteralPath $installPath -Recurse -Force -ErrorAction SilentlyContinue
+        if ($preserveData -and $dataTemp -and (Test-Path -LiteralPath $dataTemp)) {
+            if (-not (Test-Path -LiteralPath (Join-Path $fileBotDir "data"))) {
+                Copy-Item -LiteralPath $dataTemp -Destination (Join-Path $fileBotDir "data") -Recurse -Force
+            }
         }
-        New-Item -ItemType Directory -Path $installPath -Force | Out-Null
-		$itemsToCopy = Get-ChildItem -LiteralPath $copySource -Force -ErrorAction SilentlyContinue
-		Write-Info ("FileBot items to copy: " + $itemsToCopy.Count)
-		
-        Copy-Item -Path (Join-Path $copySource "*") -Destination $installPath -Recurse -Force
-		Write-Info ("FileBot install contents count: " + ((Get-ChildItem -LiteralPath $installPath -Recurse -Force -ErrorAction SilentlyContinue).Count))
 
-        if (-not (Test-Path -LiteralPath $portableExe) -and
-    -not (Test-Path -LiteralPath $cmdPath) -and
-    -not (Test-Path -LiteralPath $exePath) -and
-    -not (Test-Path -LiteralPath $ps1Path) -and
-    -not (Test-Path -LiteralPath $jarPath)) {
-    throw "FileBot normalization failed: no entrypoint found under $installPath"
-}
+        if (-not (Test-Path -LiteralPath $fileBotCmd) -and -not (Test-Path -LiteralPath $fileBotExe)) {
+            throw "FileBot install incomplete after extraction."
+        }
+
+        Write-Ok "FileBot updated successfully."
     }
-    finally {
-        Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+
+    Write-Host ""
+    Write-Cyan "Dependency Summary"
+    Write-Info ("FFmpeg    : " + $(if (Test-Path -LiteralPath $ffmpegExe) { $ffmpegExe } else { "Missing" }))
+    Write-Info ("FFprobe   : " + $(if (Test-Path -LiteralPath $ffprobeExe) { $ffprobeExe } else { "Missing" }))
+    Write-Info ("HandBrake : " + $(if (Test-Path -LiteralPath $handBrakeExe) { $handBrakeExe } else { "Missing" }))
+    Write-Info ("FileBot   : " + $(if (Test-Path -LiteralPath $fileBotCmd) { $fileBotCmd } elseif (Test-Path -LiteralPath $fileBotExe) { $fileBotExe } else { "Missing" }))
+
+    Write-Host ""
+    Write-Ok "Dependency setup complete."
+}
+finally {
+    if (Test-Path -LiteralPath $tempRoot) {
+        try {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        } catch {}
     }
 }
-
-Ensure-Directory -Path $ToolsRoot
-
-if ($Components -contains "FFmpeg") { Ensure-Ffmpeg -Root $ToolsRoot }
-if ($Components -contains "HandBrake") { Ensure-HandBrake -Root $ToolsRoot }
-if ($Components -contains "FileBot") { Ensure-FileBot -Root $ToolsRoot }
-
-Write-Info ("Dependencies are ready under: {0} (components: {1})" -f $ToolsRoot, ($Components -join ", "))

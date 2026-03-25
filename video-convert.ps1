@@ -1,16 +1,28 @@
-# Compatibility launcher wrapper. Prefer scripts/Launch-VideoConvert-Core.ps1.
-$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$versionPath = Join-Path $scriptDir "VERSION"
-$wrapperVersion = "unknown"
-if (Test-Path -LiteralPath $versionPath) {
-    $wrapperVersion = ((Get-Content -LiteralPath $versionPath -ErrorAction SilentlyContinue | Select-Object -First 1) + "").Trim()
-    if (-not $wrapperVersion) { $wrapperVersion = "unknown" }
+[CmdletBinding()]
+param()
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Get-RepoRoot {
+    if ($PSScriptRoot) {
+        return (Resolve-Path -LiteralPath $PSScriptRoot).Path
+    }
+    return (Resolve-Path -LiteralPath (Split-Path -Parent $MyInvocation.MyCommand.Path)).Path
 }
-Write-Host ("[launcher-wrapper] Script: {0}" -f $MyInvocation.MyCommand.Path) -ForegroundColor DarkGray
-Write-Host ("[launcher-wrapper] Version: {0}" -f $wrapperVersion) -ForegroundColor DarkGray
-$core = Join-Path $scriptDir "scripts\Launch-VideoConvert-Core.ps1"
-if (-not (Test-Path -LiteralPath $core)) {
-    throw "Missing launcher core script: $core"
+
+function Resolve-MenuScriptPath {
+    param([string]$RepoRoot)
+
+    $menuPath = Join-Path $RepoRoot "scripts\Menu-Core.ps1"
+    if (-not (Test-Path -LiteralPath $menuPath)) {
+        throw "Menu script not found: $menuPath"
+    }
+
+    return $menuPath
 }
-& $core @args
-exit $LASTEXITCODE
+
+$repoRoot = Get-RepoRoot
+$menuScript = Resolve-MenuScriptPath -RepoRoot $repoRoot
+
+& $menuScript

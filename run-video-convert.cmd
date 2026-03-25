@@ -2,13 +2,22 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-set "PS_SCRIPT=%SCRIPT_DIR%scripts\Launch-VideoConvert-Core.ps1"
 set "PS_SCRIPT=%SCRIPT_DIR%video-convert.ps1"
 
 if not exist "%PS_SCRIPT%" (
-  echo Could not find %PS_SCRIPT%
-  exit /b 1
+    echo ERROR: Missing PowerShell entry script:
+    echo %PS_SCRIPT%
+    pause
+    exit /b 1
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %*
-exit /b %ERRORLEVEL%
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+set "EXITCODE=%ERRORLEVEL%"
+
+if not "%EXITCODE%"=="0" (
+    echo.
+    echo Script exited with code %EXITCODE%
+    pause
+)
+
+exit /b %EXITCODE%

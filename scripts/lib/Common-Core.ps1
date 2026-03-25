@@ -1,178 +1,197 @@
-<#
-scripts\lib\Common-Core.ps1  (PowerShell 5.1 compatible)
-
-Shared functions for:
-- Logging
-- Path resolution (RepoRoot, ToolsRoot, Config)
-- Prereq checks (tools/profile present)
-- Native process capture
-- Safe directory helpers
-
-Usage (from any script under scripts\):
-. "$PSScriptRoot\lib\Common-Core.ps1"
-
-Usage (from repo root video-convert.ps1):
-. "$PSScriptRoot\scripts\lib\Common-Core.ps1"
-#>
-
 Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
-# ---------------------------------------
-# Logging
-# ---------------------------------------
-function Write-Info { param([string]$Msg) Write-Host ("[info] " + $Msg) -ForegroundColor Gray }
-function Write-Ok   { param([string]$Msg) Write-Host ("[ ok ] " + $Msg) -ForegroundColor Green }
-function Write-Warn { param([string]$Msg) Write-Host ("[warn] " + $Msg) -ForegroundColor Yellow }
-function Write-Err  { param([string]$Msg) Write-Host ("[err ] " + $Msg) -ForegroundColor Red }
-
-function Pause-Menu {
-    param([string]$Msg = "Press Enter to return to menu")
-    Write-Host ""
-    [void](Read-Host $Msg)
-}
-
-# ---------------------------------------
-# Paths
-# ---------------------------------------
-function Get-ScriptPath {
-    # Works inside dot-sourced contexts
-    if ($MyInvocation.MyCommand.Path) { return $MyInvocation.MyCommand.Path }
-    return $PSCommandPath
-}
-
-function Get-RepoRootFromScripts {
-    # Assumes this file lives at: <repo>\scripts\lib\Common-Core.ps1
-    $thisPath = Get-ScriptPath
-    $libDir   = Split-Path -Parent $thisPath
-    $scripts  = Split-Path -Parent $libDir
-    return (Resolve-Path -LiteralPath (Split-Path -Parent $scripts)).Path
+function Get-RepoRoot {
+    if ($PSScriptRoot) {
+        return (Resolve-Path -LiteralPath (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))).Path
+    }
+    return (Resolve-Path -LiteralPath (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))).Path
 }
 
 function Get-ToolsRoot {
-    param([string]$RepoRoot)
+    param([string]$RepoRoot = "")
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
     return (Join-Path $RepoRoot "tools")
 }
 
-function Get-ConfigDir {
-    param([string]$RepoRoot)
+function Get-ConfigRoot {
+    param([string]$RepoRoot = "")
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
     return (Join-Path $RepoRoot "config")
 }
 
-function Get-HardwareProfilePath {
-    param([string]$RepoRoot)
-    return (Join-Path (Get-ConfigDir -RepoRoot $RepoRoot) "hardware-profile.json")
-}
-
-# Canonical tool paths (so every script agrees)
-function Get-HandBrakeCliPath {
-    param([string]$ToolsRoot)
-    return (Join-Path (Join-Path $ToolsRoot "handbrake") "HandBrakeCLI.exe")
-}
-function Get-FfmpegPath {
-    param([string]$ToolsRoot)
-    return (Join-Path (Join-Path (Join-Path $ToolsRoot "ffmpeg") "bin") "ffmpeg.exe")
-}
-function Get-FfprobePath {
-    param([string]$ToolsRoot)
-    return (Join-Path (Join-Path (Join-Path $ToolsRoot "ffmpeg") "bin") "ffprobe.exe")
-}
-function Get-FileBotPath {
-    param([string]$ToolsRoot)
-    return (Join-Path (Join-Path $ToolsRoot "filebot") "filebot.exe")
-}
-
-# ---------------------------------------
-# Filesystem helpers
-# ---------------------------------------
-function Ensure-Directory {
-    param([Parameter(Mandatory=$true)][string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+function Get-LogsRoot {
+    param([string]$RepoRoot = "")
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
     }
+    return (Join-Path $RepoRoot "Logs")
 }
 
-# ---------------------------------------
-# Prereq assertions (NO auto-bootstrap)
-# ---------------------------------------
-function Assert-ToolsPresent {
+function Get-ConvertedRoot {
+    param([string]$RepoRoot = "")
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
+    return (Join-Path $RepoRoot "Converted")
+}
+
+function Get-FailedRoot {
+    param([string]$RepoRoot = "")
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
+    return (Join-Path $RepoRoot "Failed")
+}
+
+function Get-HardwareProfilePath {
+    param([string]$RepoRoot = "")
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
+    return (Join-Path (Get-ConfigRoot -RepoRoot $RepoRoot) "hardware-profile.json")
+}
+
+function Ensure-Directory {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -ItemType Directory -Force | Out-Null
+    }
+    return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Resolve-ProjectToolPath {
     param(
-        [Parameter(Mandatory=$true)][string]$RepoRoot,
-        [switch]$IncludeFileBot
+        [Parameter(Mandatory)][string]$RelativePath,
+        [string]$Fallback = "",
+        [string]$RepoRoot = ""
     )
 
-    $toolsRoot = Get-ToolsRoot -RepoRoot $RepoRoot
-
-    $hb = Get-HandBrakeCliPath -ToolsRoot $toolsRoot
-    $ff = Get-FfmpegPath -ToolsRoot $toolsRoot
-    $fp = Get-FfprobePath -ToolsRoot $toolsRoot
-
-    $missing = @()
-    if (-not (Test-Path -LiteralPath $hb)) { $missing += "HandBrakeCLI" }
-    if (-not (Test-Path -LiteralPath $ff)) { $missing += "FFmpeg" }
-    if (-not (Test-Path -LiteralPath $fp)) { $missing += "FFprobe" }
-
-    if ($IncludeFileBot) {
-        $fb = Get-FileBotPath -ToolsRoot $toolsRoot
-        if (-not (Test-Path -LiteralPath $fb)) { $missing += "FileBot" }
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
     }
+
+    $candidate = Join-Path $RepoRoot $RelativePath
+    if (Test-Path -LiteralPath $candidate) {
+        return (Resolve-Path -LiteralPath $candidate).Path
+    }
+
+    if ($Fallback -and $Fallback.Trim() -and (Test-Path -LiteralPath $Fallback)) {
+        return (Resolve-Path -LiteralPath $Fallback).Path
+    }
+
+    return $null
+}
+
+function Get-PortableToolPaths {
+    param([string]$RepoRoot = "")
+
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
+
+    $fileBotCmd = Resolve-ProjectToolPath -RepoRoot $RepoRoot -RelativePath "tools\filebot\filebot.cmd"
+    $fileBotExe = Resolve-ProjectToolPath -RepoRoot $RepoRoot -RelativePath "tools\filebot\FileBot.exe"
+
+    [pscustomobject]@{
+        RepoRoot     = $RepoRoot
+        ToolsRoot    = Get-ToolsRoot -RepoRoot $RepoRoot
+        Ffmpeg       = Resolve-ProjectToolPath -RepoRoot $RepoRoot -RelativePath "tools\ffmpeg\bin\ffmpeg.exe"
+        Ffprobe      = Resolve-ProjectToolPath -RepoRoot $RepoRoot -RelativePath "tools\ffmpeg\bin\ffprobe.exe"
+        HandBrakeCli = Resolve-ProjectToolPath -RepoRoot $RepoRoot -RelativePath "tools\handbrake\HandBrakeCLI.exe"
+        FileBot      = $(if ($fileBotCmd) { $fileBotCmd } else { $fileBotExe })
+        FileBotCmd   = $fileBotCmd
+        FileBotExe   = $fileBotExe
+    }
+}
+
+function Test-CoreToolsPresent {
+    param([string]$RepoRoot = "")
+
+    $tools = Get-PortableToolPaths -RepoRoot $RepoRoot
+    return [pscustomobject]@{
+        HasFfmpeg    = [bool]$tools.Ffmpeg
+        HasFfprobe   = [bool]$tools.Ffprobe
+        HasHandBrake = [bool]$tools.HandBrakeCli
+        HasFileBot   = [bool]$tools.FileBot
+        HasCoreTools = ([bool]$tools.Ffmpeg -and [bool]$tools.Ffprobe -and [bool]$tools.HandBrakeCli)
+        Tools        = $tools
+    }
+}
+
+function Assert-CoreToolsPresent {
+    param([string]$RepoRoot = "")
+
+    $status = Test-CoreToolsPresent -RepoRoot $RepoRoot
+    $missing = @()
+
+    if (-not $status.HasFfmpeg)    { $missing += "ffmpeg" }
+    if (-not $status.HasFfprobe)   { $missing += "ffprobe" }
+    if (-not $status.HasHandBrake) { $missing += "HandBrakeCLI" }
 
     if ($missing.Count -gt 0) {
-        throw ("Missing required tools: " + ($missing -join ", ") + ". Run option 1 (Download / Update Tools) first.")
+        throw ("Missing core tools: " + ($missing -join ", "))
     }
+
+    return $status
 }
 
 function Assert-HardwareProfilePresent {
-    param([Parameter(Mandatory=$true)][string]$RepoRoot)
+    param([string]$RepoRoot = "")
 
-    $p = Get-HardwareProfilePath -RepoRoot $RepoRoot
-    if (-not (Test-Path -LiteralPath $p)) {
-        throw ("Hardware profile not found: $p. Run option 2 (Hardware Test) first.")
+    $profilePath = Get-HardwareProfilePath -RepoRoot $RepoRoot
+    if (-not (Test-Path -LiteralPath $profilePath)) {
+        throw "Hardware profile not found: $profilePath"
     }
+
+    return $profilePath
 }
 
-# ---------------------------------------
-# Native exec capture (PS 5.1 safe)
-# ---------------------------------------
-function Invoke-NativeCapture {
+function Read-HardwareProfile {
+    param([string]$RepoRoot = "")
+
+    $profilePath = Assert-HardwareProfilePresent -RepoRoot $RepoRoot
+    return (Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json)
+}
+
+function New-RunStamp {
+    return (Get-Date -Format "yyyyMMdd-HHmmss")
+}
+
+function New-RunLogPath {
     param(
-        [Parameter(Mandatory=$true)][string]$FilePath,
-        [Parameter(Mandatory=$true)][string[]]$Args,
-        [int]$TimeoutSeconds = 0
+        [Parameter(Mandatory)][string]$Prefix,
+        [string]$RepoRoot = ""
     )
 
-    if (-not (Test-Path -LiteralPath $FilePath)) {
-        throw "Executable not found: $FilePath"
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
     }
 
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo.FileName = $FilePath
-    $p.StartInfo.Arguments = ($Args -join " ")
-    $p.StartInfo.RedirectStandardOutput = $true
-    $p.StartInfo.RedirectStandardError  = $true
-    $p.StartInfo.UseShellExecute = $false
-    $p.StartInfo.CreateNoWindow = $true
-
-    [void]$p.Start()
-
-    if ($TimeoutSeconds -gt 0) {
-        $exited = $p.WaitForExit($TimeoutSeconds * 1000)
-        if (-not $exited) {
-            try { $p.Kill() } catch {}
-            throw "Process timeout after $TimeoutSeconds seconds: $FilePath $($Args -join ' ')"
-        }
-    } else {
-        $p.WaitForExit()
-    }
-
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-
-    [pscustomobject]@{
-        ExitCode = $p.ExitCode
-        StdOut   = $stdout
-        StdErr   = $stderr
-        Text     = ($stdout + "`n" + $stderr).Trim()
-        FilePath = $FilePath
-        Args     = $Args
-    }
+    $logsRoot = Ensure-Directory -Path (Get-LogsRoot -RepoRoot $RepoRoot)
+    return (Join-Path $logsRoot ("{0}-{1}.log" -f $Prefix, (New-RunStamp)))
 }
+
+function New-FailedCsvPath {
+    param(
+        [Parameter(Mandatory)][string]$Prefix,
+        [string]$RepoRoot = ""
+    )
+
+    if (-not $RepoRoot -or -not $RepoRoot.Trim()) {
+        $RepoRoot = Get-RepoRoot
+    }
+
+    $failedRoot = Ensure-Directory -Path (Get-FailedRoot -RepoRoot $RepoRoot)
+    return (Join-Path $failedRoot ("{0}-{1}.csv" -f $Prefix, (New-RunStamp)))
+}
+
+function Write-ConsoleInfo([string]$Message) { Write-Host $Message -ForegroundColor Gray }
+function Write-ConsoleWarn([string]$Message) { Write-Host $Message -ForegroundColor Yellow }
+function Write-ConsoleError([string]$Message) { Write-Host $Message -ForegroundColor Red }
+function Write-ConsoleOk([string]$Message) { Write-Host $Message -ForegroundColor Green }
+function Write-ConsoleCyan([string]$Message) { Write-Host $Message -ForegroundColor Cyan }

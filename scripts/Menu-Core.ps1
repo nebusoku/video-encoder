@@ -1,13 +1,6 @@
 <#
-Menu-Core.ps1 (PowerShell 5.1 compatible)
-Central controller for menu + decision tree.
-
-Responsibilities:
-- Show menu
-- Show current readiness status
-- Enforce prerequisites
-- Dispatch to action scripts
-- Reserve clean menu slots for future pipeline/DVD work
+Menu-Core.ps1
+Central controller for menu + prompts + action dispatch.
 #>
 
 [CmdletBinding()]
@@ -28,7 +21,6 @@ function Pause-Menu([string]$msg = "Press Enter to return to menu") {
 }
 
 function Get-RepoRoot {
-    # scripts\Menu-Core.ps1 -> repo root is parent of scripts\
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
     return (Resolve-Path -LiteralPath (Split-Path -Parent $scriptDir)).Path
 }
@@ -141,27 +133,6 @@ function Invoke-ActionScript {
     }
 }
 
-function Invoke-OptionalActionScript {
-    param(
-        [string]$repoRoot,
-        [string]$relativePath,
-        [hashtable]$args = @{},
-        [string]$NotReadyMessage = "This menu option is not wired yet in this build."
-    )
-
-    $scriptPath = Resolve-ActionScriptPath -repoRoot $repoRoot -relativePath $relativePath
-    if (-not $scriptPath) {
-        Write-Warn $NotReadyMessage
-        return
-    }
-
-    & $scriptPath @args
-
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
-        Write-Warn ("Action returned exit code: " + $LASTEXITCODE)
-    }
-}
-
 function Get-ReadinessSummary {
     param([string]$repoRoot)
 
@@ -169,11 +140,11 @@ function Get-ReadinessSummary {
     $profilePath = Get-ProfilePath $repoRoot
 
     return [pscustomobject]@{
-        ToolsReady     = $toolStatus.HasCoreTools
-        ProfileReady   = (Test-Path -LiteralPath $profilePath)
-        FileBotReady   = $toolStatus.HasFileBot
-        ProfilePath    = $profilePath
-        ToolStatus     = $toolStatus
+        ToolsReady   = $toolStatus.HasCoreTools
+        ProfileReady = (Test-Path -LiteralPath $profilePath)
+        FileBotReady = $toolStatus.HasFileBot
+        ProfilePath  = $profilePath
+        ToolStatus   = $toolStatus
     }
 }
 
@@ -201,7 +172,7 @@ function Show-Header {
 
     Write-Host "FileBot  :" -NoNewline
     if ($summary.FileBotReady) { Write-Host " Detected" -ForegroundColor Green }
-    else { Write-Host " Not Found (optional today)" -ForegroundColor DarkYellow }
+    else { Write-Host " Not Found" -ForegroundColor DarkYellow }
 
     Write-Host ""
 }
@@ -231,6 +202,174 @@ function Open-FolderIfExists {
     Start-Process explorer.exe -ArgumentList "`"$path`"" | Out-Null
 }
 
+function Read-YesNo {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [bool]$Default = $false
+    )
+
+    $suffix = if ($Default) { "[Y/n]" } else { "[y/N]" }
+
+    while ($true) {
+        $resp = Read-Host "$Prompt $suffix"
+        if (-not $resp -or -not $resp.Trim()) { return $Default }
+
+        switch ($resp.Trim().ToLowerInvariant()) {
+            "y"   { return $true }
+            "yes" { return $true }
+            "n"   { return $false }
+            "no"  { return $false }
+            default { Write-Warn "Please answer y or n." }
+        }
+    }
+}
+
+function Read-OptionalString {
+    param([string]$Prompt)
+    $v = Read-Host $Prompt
+    if ($v) { return $v.Trim() }
+    return ""
+}
+
+function Get-CommonRunOptions {
+    param(
+        [string]$repoRoot,
+        [bool]$AskRootPath = $true
+    )
+
+    $summary = Get-ReadinessSummary $repoRoot
+    $opts = @{}
+
+    if ($AskRootPath) {
+        $rootPath = Read-OptionalString "Enter root path (leave blank to be prompted by script)"
+        if ($rootPath) { $opts.RootPath = $rootPath }
+    }
+
+    $opts.EnableFileBotRename = $false
+    $opts.FileBotTestRun = $false
+
+    if ($summary.FileBotReady) {
+        $opts.EnableFileBotRename = Read-YesNo "Enable FileBot rename?" $true
+        if ($opts.EnableFileBotRename) {
+            $opts.FileBotTestRun = Read-YesNo "Run FileBot in test mode only?" $false
+        }
+    }
+    else {
+        Write-Warn "FileBot not detected. Rename option will stay off."
+    }
+
+    $opts.BackupOriginal = Read-YesNo "Keep originals in Originals folder?" $true
+    $opts.DryRun = Read-YesNo "Dry run only?" $false
+
+    $maxGb = Read-OptionalString "Max total input GB for this run (blank = unlimited)"
+    if ($maxGb) {
+        try { $opts.MaxTotalInputGB = [double]$maxGb }
+        catch { Write-Warn "Invalid number for MaxTotalInputGB. Using unlimited." }
+    }
+
+    $jobs = Read-OptionalString "Concurrent jobs (blank = default)"
+    if ($jobs) {
+        try { $opts.ConcurrentJobs = [int]$jobs }
+        catch { Write-Warn "Invalid number for ConcurrentJobs. Using default." }
+    }
+
+    $encoder = Read-OptionalString "Encoder mode Auto/NVENC/AMDVCE/X264 (blank = Auto)"
+    if ($encoder) {
+        $upper = $encoder.Trim().ToUpperInvariant()
+        if ($upper -in @("AUTO","NVENC","AMDVCE","X264")) {
+            $opts.EncoderMode = $upper
+        }
+        else {
+            Write-Warn "Invalid encoder mode. Using default."
+        }
+    }
+
+    $quality = Read-OptionalString "Quality RF value (blank = default)"
+    if ($quality) {
+        try { $opts.Quality = [int]$quality }
+        catch { Write-Warn "Invalid quality value. Using default." }
+    }
+
+    $audio = Read-OptionalString "Audio bitrate kbps (blank = default)"
+    if ($audio) {
+        try { $opts.AudioBitrateKbps = [int]$audio }
+        catch { Write-Warn "Invalid audio bitrate. Using default." }
+    }
+
+    return $opts
+}
+
+function Get-DvdTvOptions {
+    param([string]$repoRoot)
+
+    $opts = Get-CommonRunOptions -repoRoot $repoRoot -AskRootPath:$false
+
+    $source = Read-OptionalString "DVD source path (.iso, .img, or VIDEO_TS folder)"
+    if ($source) { $opts.SourcePath = $source }
+
+    $outRoot = Read-OptionalString "Show output root folder"
+    if ($outRoot) { $opts.OutputRoot = $outRoot }
+
+    $season = Read-OptionalString "Season number (blank = prompt later)"
+    if ($season) {
+        try { $opts.SeasonNumber = [int]$season }
+        catch { Write-Warn "Invalid season number. Script will prompt later." }
+    }
+
+    $skipUnder = Read-OptionalString "Skip titles shorter than seconds (blank = default)"
+    if ($skipUnder) {
+        try { $opts.SkipUnderSeconds = [int]$skipUnder }
+        catch { Write-Warn "Invalid SkipUnderSeconds. Using default." }
+    }
+
+    $episodeMin = Read-OptionalString "Episode minimum seconds (blank = default)"
+    if ($episodeMin) {
+        try { $opts.EpisodeMinSeconds = [int]$episodeMin }
+        catch { Write-Warn "Invalid EpisodeMinSeconds. Using default." }
+    }
+
+    return $opts
+}
+
+function Get-DvdMovieOptions {
+    param([string]$repoRoot)
+
+    $opts = Get-CommonRunOptions -repoRoot $repoRoot -AskRootPath:$false
+
+    $source = Read-OptionalString "DVD source path (.iso, .img, or VIDEO_TS folder)"
+    if ($source) { $opts.SourcePath = $source }
+
+    $outRoot = Read-OptionalString "Movie output folder"
+    if ($outRoot) { $opts.OutputRoot = $outRoot }
+
+    $minTitle = Read-OptionalString "Minimum movie title seconds (blank = default)"
+    if ($minTitle) {
+        try { $opts.MinTitleSeconds = [int]$minTitle }
+        catch { Write-Warn "Invalid MinTitleSeconds. Using default." }
+    }
+
+    return $opts
+}
+
+function Get-FileBotOptions {
+    $opts = @{}
+
+    $modeChoice = Read-Choice
+}
+
+function Read-Choice {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [Parameter(Mandatory)][string[]]$Allowed
+    )
+
+    while ($true) {
+        $v = Read-Host $Prompt
+        if ($Allowed -contains $v) { return $v }
+        Write-Warn ("Allowed values: " + ($Allowed -join ", "))
+    }
+}
+
 $repoRoot = Get-RepoRoot
 
 while ($true) {
@@ -247,7 +386,7 @@ while ($true) {
 
             "1" {
                 Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Ensure-Dependencies-Core.ps1" -args @{}
-                Write-Ok "Tools are ready."
+                Write-Ok "Tools check/update complete."
                 Pause-Menu
             }
 
@@ -264,43 +403,50 @@ while ($true) {
             "3" {
                 Assert-ToolsPresent -repoRoot $repoRoot
                 Assert-ProfilePresent -repoRoot $repoRoot
-                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-TV.ps1" -args @{}
+                $opts = Get-CommonRunOptions -repoRoot $repoRoot -AskRootPath:$true
+                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-TV.ps1" -args $opts
                 Pause-Menu
             }
 
             "4" {
                 Assert-ToolsPresent -repoRoot $repoRoot
                 Assert-ProfilePresent -repoRoot $repoRoot
-                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-Movies.ps1" -args @{}
+                $opts = Get-CommonRunOptions -repoRoot $repoRoot -AskRootPath:$true
+                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-Movies.ps1" -args $opts
                 Pause-Menu
             }
 
             "5" {
                 Assert-ToolsPresent -repoRoot $repoRoot
                 Assert-ProfilePresent -repoRoot $repoRoot
-                Invoke-OptionalActionScript -repoRoot $repoRoot `
-                    -relativePath "scripts\Start-DVD-Movies.ps1" `
-                    -args @{} `
-                    -NotReadyMessage "DVD Movie import is not wired yet. Add scripts\Start-DVD-Movies.ps1 when ready."
+                $opts = Get-DvdMovieOptions -repoRoot $repoRoot
+                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-DVD-Movies.ps1" -args $opts
                 Pause-Menu
             }
 
             "6" {
                 Assert-ToolsPresent -repoRoot $repoRoot
                 Assert-ProfilePresent -repoRoot $repoRoot
-                Invoke-OptionalActionScript -repoRoot $repoRoot `
-                    -relativePath "scripts\Start-DVD-TV.ps1" `
-                    -args @{} `
-                    -NotReadyMessage "DVD TV import is not wired yet. Add scripts\Start-DVD-TV.ps1 when ready."
+                $opts = Get-DvdTvOptions -repoRoot $repoRoot
+                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-DVD-TV.ps1" -args $opts
                 Pause-Menu
             }
 
             "7" {
                 Assert-ToolsPresent -repoRoot $repoRoot
-                Invoke-OptionalActionScript -repoRoot $repoRoot `
-                    -relativePath "scripts\Start-FileBot-Rename.ps1" `
-                    -args @{} `
-                    -NotReadyMessage "Standalone FileBot rename is not wired yet. Add scripts\Start-FileBot-Rename.ps1 when ready."
+                $modePick = Read-Choice -Prompt "FileBot mode: 1=TV, 2=MOVIES" -Allowed @("1","2")
+                $inputPath = Read-OptionalString "Input path to rename (file or folder)"
+                $outputPath = Read-OptionalString "Output path (blank = rename in place)"
+                $testRun = Read-YesNo "Run FileBot in test mode only?" $false
+
+                $args = @{
+                    Mode = $(if ($modePick -eq "1") { "TV" } else { "MOVIES" })
+                    TestRun = $testRun
+                }
+                if ($inputPath) { $args.InputPath = $inputPath }
+                if ($outputPath) { $args.OutputPath = $outputPath }
+
+                Invoke-ActionScript -repoRoot $repoRoot -relativePath "scripts\Start-FileBot-Rename.ps1" -args $args
                 Pause-Menu
             }
 
