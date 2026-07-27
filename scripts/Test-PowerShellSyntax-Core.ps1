@@ -7,8 +7,6 @@ if (Test-Path -LiteralPath $versionPath) {
     $ScriptVersion = ((Get-Content -LiteralPath $versionPath -ErrorAction SilentlyContinue | Select-Object -First 1) + "").Trim()
     if (-not $ScriptVersion) { $ScriptVersion = "unknown" }
 }
-$ScriptVersion = "2026.02.21.1"
-$ScriptSelf = $MyInvocation.MyCommand.Path
 Write-Host ("[syntax-check] Script: {0}" -f $ScriptSelf) -ForegroundColor DarkGray
 Write-Host ("[syntax-check] Version: {0}" -f $ScriptVersion) -ForegroundColor DarkGray
 
@@ -50,10 +48,6 @@ foreach ($hashTarget in $hashTargets) {
         }
     }
 }
-$skipFiles = @(
-    (Join-Path $Root "video-convert.ps1"),
-    (Join-Path $Root "scripts\Test-PowerShellSyntax.ps1")
-)
 $skipFiles = @()
 if (-not $IncludeLegacyShims) {
     $skipFiles += (Join-Path $Root "scripts\Ensure-Dependencies.ps1")

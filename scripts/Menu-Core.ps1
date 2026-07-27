@@ -351,12 +351,6 @@ function Get-DvdMovieOptions {
     return $opts
 }
 
-function Get-FileBotOptions {
-    $opts = @{}
-
-    $modeChoice = Read-Choice
-}
-
 function Read-Choice {
     param(
         [Parameter(Mandatory)][string]$Prompt,
