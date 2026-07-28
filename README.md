@@ -25,6 +25,51 @@ Do **not** wrap the command in backticks — in PowerShell backticks are escape
 characters, not quotes. From an already-open prompt you can also use
 `& ".\video-convert.ps1"`.
 
+## Command-line interface
+
+`video-encoder` runs any step directly from one entry point, loading only the
+script that command needs. Run it with no command to get the interactive menu.
+
+```bat
+video-encoder.cmd <command> [options]
+```
+
+or in PowerShell:
+
+```powershell
+.\video-encoder.ps1 <command> [options]
+# or import the module and use the command/alias:
+Import-Module .\module\VideoEncoder.psd1
+video-encoder <command> [options]
+```
+
+Commands:
+
+| Command | Does | Needs |
+|---------|------|-------|
+| `tools` | Download / update the toolchain | — |
+| `probe` | Build / refresh the hardware profile | tools |
+| `encode-tv` | Encode a TV library (720p) | tools + profile |
+| `encode-movies` | Encode a Movies library (1080p) | tools + profile |
+| `dvd-tv` | Rip / encode a TV DVD | tools + profile |
+| `dvd-movies` | Rip / encode a movie DVD | tools + profile |
+| `filebot` | Rename / stage with FileBot | tools |
+| `menu` | Launch the interactive menu | — |
+| `help` | Show usage (`--help`, `-h` too) | — |
+
+Options after the command are forwarded to the underlying script, so every
+parameter that script accepts works on the CLI (names may be abbreviated if
+unambiguous). Missing tools/profile, unknown parameters, and missing values are
+reported before anything runs. Examples:
+
+```powershell
+.\video-encoder.ps1 tools -ForceRedownload
+.\video-encoder.ps1 probe
+.\video-encoder.ps1 encode-tv -RootPath "Y:\TV Shows" -EnableFileBotRename
+.\video-encoder.ps1 encode-movies -RootPath "Y:\Movies" -Quality 22
+.\video-encoder.ps1 dvd-movies -SourcePath "D:\" -OutputRoot "Y:\Movies"
+```
+
 ## Interactive menu
 
 `video-convert.ps1` launches `scripts\Menu-Core.ps1`, which shows a readiness
