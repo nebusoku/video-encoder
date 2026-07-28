@@ -160,6 +160,26 @@ config\                        Machine-specific profiles/logs (gitignored)
   python .\scripts\Validate-PowerShellStatic.py
   ```
 
+## Releases
+
+Releases are published automatically by `.github/workflows/release.yml` when a
+version tag is pushed. To cut a release:
+
+1. Bump the version in both [`VERSION`](VERSION) and
+   [`module/VideoEncoder.psd1`](module/VideoEncoder.psd1) (`ModuleVersion`).
+2. Commit the bump.
+3. Tag and push:
+
+   ```bash
+   git tag v1.1.0
+   git push origin v1.1.0
+   ```
+
+The workflow verifies the tag matches both version strings, builds
+`video-encoder-<version>.zip` from the tracked files (via `git archive`, so no
+`tools\`, downloads, or machine config are included), and publishes a GitHub
+Release with auto-generated notes.
+
 ## Antivirus (Defender / Bitdefender)
 
 Because the tool downloads real encoder binaries and then runs them, security

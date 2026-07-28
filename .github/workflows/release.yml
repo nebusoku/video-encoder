@@ -1,0 +1,68 @@
+name: Release
+
+# Publish a GitHub Release whenever a version tag (v*) is pushed.
+#   1. bump VERSION and module/VideoEncoder.psd1 ModuleVersion
+#   2. commit
+#   3. git tag vX.Y.Z && git push --tags
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and verify version
+        id: ver
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          file_version="$(head -n1 VERSION | tr -d '[:space:]')"
+          psd1_version="$(grep -oiE "ModuleVersion[[:space:]]*=[[:space:]]*'[^']+'" module/VideoEncoder.psd1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tag:        $tag"
+          echo "VERSION:    $file_version"
+          echo "psd1:       $psd1_version"
+
+          if [ "$version" != "$file_version" ]; then
+            echo "::error::Tag version ($version) != VERSION file ($file_version). Bump VERSION before tagging."
+            exit 1
+          fi
+          if [ "$version" != "$psd1_version" ]; then
+            echo "::error::Tag version ($version) != module ModuleVersion ($psd1_version). Bump module/VideoEncoder.psd1 before tagging."
+            exit 1
+          fi
+
+      - name: Build release archive
+        id: build
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          out="video-encoder-${version}.zip"
+          # git archive respects .gitattributes export-ignore and ships only
+          # tracked files (no .git, no downloaded tools, no machine config).
+          git archive --format=zip --prefix="video-encoder-${version}/" -o "$out" "${GITHUB_REF_NAME}"
+          echo "asset=$out" >> "$GITHUB_OUTPUT"
+          echo "Contents:"
+          unzip -l "$out"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            "${{ steps.build.outputs.asset }}" \
+            --title "video-encoder ${{ steps.ver.outputs.version }}" \
+            --generate-notes
