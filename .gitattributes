@@ -1,0 +1,3 @@
+# Keep CI/dev-only files out of the distributed release zip (git archive).
+/.github        export-ignore
+/.gitattributes export-ignore
